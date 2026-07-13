@@ -8,8 +8,11 @@ export class Place {
   @Prop({ sparse: true })
   externalId?: string;
 
-  @Prop({ enum: ['kakao', 'manual'], default: 'manual' })
-  source: 'kakao' | 'manual';
+  @Prop({ enum: ['kakao', 'manual', 'tour'], default: 'manual' })
+  source: 'kakao' | 'manual' | 'tour';
+
+  @Prop()
+  contentTypeId?: number;
 
   @Prop({ required: true })
   name: string;

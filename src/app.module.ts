@@ -7,6 +7,8 @@ import { QuizModule } from './quiz/quiz.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { PlacesModule } from './places/places.module';
 import { DestinationsModule } from './destinations/destinations.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
+import { TourModule } from './tour/tour.module';
 
 @Module({
   imports: [
@@ -19,10 +21,12 @@ import { DestinationsModule } from './destinations/destinations.module';
     }),
     AuthModule,
     UsersModule,
+    OnboardingModule,
     QuizModule,
     RoomsModule,
     PlacesModule,
     DestinationsModule,
+    TourModule,
   ],
 })
 export class AppModule {}

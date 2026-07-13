@@ -370,10 +370,7 @@ export class RoomsService {
     dayPlan.items.push(item);
 
     if (dto.placeId) {
-      const candidate = room.candidatePlaces.find(
-        (c) => c.placeId.toString() === dto.placeId,
-      );
-      if (candidate) candidate.scheduled = true;
+      this.syncCandidateScheduledFlags(room);
     }
 
     room.progress = this.computeProgress(room);
@@ -428,6 +425,7 @@ export class RoomsService {
       const before = day.items.length;
       day.items = day.items.filter((i) => i.id !== itemId);
       if (day.items.length < before) {
+        this.syncCandidateScheduledFlags(room);
         await room.save();
         return { success: true };
       }
@@ -453,9 +451,23 @@ export class RoomsService {
         lng: item.lng,
       })),
     }));
+    this.syncCandidateScheduledFlags(room);
     room.progress = this.computeProgress(room);
     await room.save();
     return room.schedule;
+  }
+
+  /** Keep candidate.scheduled in sync with schedule placeIds. */
+  private syncCandidateScheduledFlags(room: TravelRoomDocument) {
+    const scheduledPlaceIds = new Set(
+      room.schedule.days
+        .flatMap((d) => d.items)
+        .map((i) => i.placeId?.toString())
+        .filter(Boolean),
+    );
+    for (const c of room.candidatePlaces) {
+      c.scheduled = scheduledPlaceIds.has(c.placeId.toString());
+    }
   }
 
   async getScheduleSummary(roomId: string, userId: string) {

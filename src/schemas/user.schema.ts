@@ -50,9 +50,6 @@ export class User {
   @Prop({ default: false })
   isGuest: boolean;
 
-  @Prop({ type: Object, default: {} })
-  quizAnswers: Record<string, string>;
-
   @Prop({ type: [String], default: [] })
   refreshTokens: string[];
 }
