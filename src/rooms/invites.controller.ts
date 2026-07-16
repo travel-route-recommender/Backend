@@ -1,6 +1,7 @@
 import { Controller, Param, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -11,8 +12,9 @@ import {
   CurrentUser,
 } from '../common/decorators/current-user.decorator';
 import { RoomsService } from './rooms.service';
+import { RoomDto } from '../common/dto/swagger-responses.dto';
 
-@ApiTags('invites')
+@ApiTags('초대')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('invites')
@@ -22,6 +24,7 @@ export class InvitesController {
   @Post(':code/accept')
   @ApiOperation({ summary: '초대 코드로 여행방 참여 (기존 유저)' })
   @ApiParam({ name: 'code', example: 'ABCD1234' })
+  @ApiOkResponse({ type: RoomDto })
   accept(@CurrentUser() user: AuthUser, @Param('code') code: string) {
     return this.roomsService.acceptInvite(code, user.userId);
   }

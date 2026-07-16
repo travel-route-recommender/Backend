@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -30,6 +31,7 @@ import {
   buildCourses,
   calculateMatchResult,
 } from '../quiz/quiz.data';
+import { TourService } from '../tour/tour.service';
 
 const generateInviteCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
 
@@ -40,6 +42,7 @@ export class RoomsService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Place.name) private placeModel: Model<PlaceDocument>,
     private config: ConfigService,
+    private tourService: TourService,
   ) {}
 
   private inviteLink(code: string) {
@@ -296,17 +299,28 @@ export class RoomsService {
 
   async addCandidate(roomId: string, userId: string, dto: AddCandidateDto) {
     const room = await this.getRoomForMember(roomId, userId);
-    const place = await this.placeModel.findById(dto.placeId);
+
+    // placeId 직접 지정 또는 TourAPI contentId로 upsert 후 placeId 확보.
+    let placeId = dto.placeId;
+    if (!placeId) {
+      if (!dto.tourContentId) {
+        throw new BadRequestException('placeId or tourContentId is required');
+      }
+      placeId = await this.tourService.resolvePlaceId(
+        dto.tourContentId,
+        dto.contentTypeId,
+      );
+    }
+
+    const place = await this.placeModel.findById(placeId);
     if (!place) throw new NotFoundException('Place not found');
 
     const exists = room.candidatePlaces.some(
-      (c) =>
-        c.placeId.toString() === dto.placeId &&
-        c.addedBy.toString() === userId,
+      (c) => c.placeId.toString() === placeId && c.addedBy.toString() === userId,
     );
     if (!exists) {
       room.candidatePlaces.push({
-        placeId: new Types.ObjectId(dto.placeId),
+        placeId: new Types.ObjectId(placeId),
         addedBy: new Types.ObjectId(userId),
         addedAt: new Date(),
         note: dto.note,

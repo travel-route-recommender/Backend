@@ -8,9 +8,16 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { clean } from './tour.util';
 
+export type TourServiceKind =
+  | 'kor'
+  | 'related'
+  | 'hub'
+  | 'datalab'
+  | 'cnctr';
+
 /**
- * Thin wrapper around 한국관광공사 TourAPI (KorService2).
- * All external dependency is confined here; callers never see raw TourAPI shapes.
+ * 한국관광공사 TourAPI 공통 클라이언트.
+ * KorService2 + 특화 서비스(연관/중심/방문자/집중률)를 base URL만 바꿔 호출한다.
  */
 @Injectable()
 export class TourApiClient {
@@ -18,13 +25,7 @@ export class TourApiClient {
   private readonly http: AxiosInstance;
 
   constructor(private readonly config: ConfigService) {
-    this.http = axios.create({
-      baseURL: this.config.get<string>(
-        'TOUR_API_BASE_URL',
-        'https://apis.data.go.kr/B551011/KorService2',
-      ),
-      timeout: 5_000,
-    });
+    this.http = axios.create({ timeout: 8_000 });
   }
 
   private get commonParams() {
@@ -36,13 +37,44 @@ export class TourApiClient {
     };
   }
 
+  private baseUrl(kind: TourServiceKind): string {
+    const defaults: Record<TourServiceKind, string> = {
+      kor: 'https://apis.data.go.kr/B551011/KorService2',
+      related: 'https://apis.data.go.kr/B551011/TarRlteTarService1',
+      hub: 'https://apis.data.go.kr/B551011/LocgoHubTarService1',
+      datalab: 'https://apis.data.go.kr/B551011/DataLabService',
+      cnctr: 'https://apis.data.go.kr/B551011/TatsCnctrRateService',
+    };
+    const envKeys: Record<TourServiceKind, string> = {
+      kor: 'TOUR_API_BASE_URL',
+      related: 'TOUR_RELATED_API_BASE_URL',
+      hub: 'TOUR_HUB_API_BASE_URL',
+      datalab: 'TOUR_DATALAB_API_BASE_URL',
+      cnctr: 'TOUR_CNCTR_API_BASE_URL',
+    };
+    return this.config.get<string>(envKeys[kind], defaults[kind]);
+  }
+
+  /** KorService2 기본 호출 (기존 호환). */
   async call<T = unknown>(
     operation: string,
     params: Record<string, string | number | undefined | null>,
     attempt = 0,
   ): Promise<T> {
+    return this.callService<T>('kor', operation, params, attempt);
+  }
+
+  async callService<T = unknown>(
+    kind: TourServiceKind,
+    operation: string,
+    params: Record<string, string | number | undefined | null>,
+    attempt = 0,
+  ): Promise<T> {
+    const baseURL = this.baseUrl(kind);
+    const label = `${kind}/${operation}`;
     try {
       const res = await this.http.get(`/${operation}`, {
+        baseURL,
         params: {
           ...this.commonParams,
           numOfRows: 20,
@@ -53,25 +85,33 @@ export class TourApiClient {
 
       const data = res.data;
 
-      // Gateway/error responses come back as plain text (or XML), not JSON.
       if (typeof data === 'string') {
         this.logger.error(
-          `TourAPI ${operation} non-JSON response: ${data.slice(0, 200)}`,
+          `TourAPI ${label} non-JSON: ${data.slice(0, 200)}`,
         );
         throw new HttpException(
-          { code: 'TOUR_API_UNAVAILABLE', message: '관광정보 API 응답 오류' },
+          {
+            code: 'TOUR_API_UNAVAILABLE',
+            message: '관광정보 API 응답 오류',
+          },
           HttpStatus.BAD_GATEWAY,
         );
       }
 
-      const header = (data as { response?: { header?: { resultCode?: string; resultMsg?: string } } })
-        ?.response?.header;
+      const header = (
+        data as {
+          response?: { header?: { resultCode?: string; resultMsg?: string } };
+        }
+      )?.response?.header;
       if (header && header.resultCode && header.resultCode !== '0000') {
         this.logger.error(
-          `TourAPI ${operation} ${header.resultCode} ${header.resultMsg}`,
+          `TourAPI ${label} ${header.resultCode} ${header.resultMsg}`,
         );
         throw new HttpException(
-          { code: 'TOUR_API_ERROR', message: header.resultMsg ?? '관광정보 조회 실패' },
+          {
+            code: 'TOUR_API_ERROR',
+            message: header.resultMsg ?? '관광정보 조회 실패',
+          },
           HttpStatus.BAD_GATEWAY,
         );
       }
@@ -82,17 +122,19 @@ export class TourApiClient {
 
       const status = (err as { response?: { status?: number } })?.response
         ?.status;
-      // Retry once on transient 429/5xx with short backoff.
       if (attempt < 1 && (status === 429 || (status ?? 0) >= 500)) {
         await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
-        return this.call<T>(operation, params, attempt + 1);
+        return this.callService<T>(kind, operation, params, attempt + 1);
       }
 
       this.logger.error(
-        `TourAPI ${operation} failed (status ${status ?? 'n/a'}): ${(err as Error).message}`,
+        `TourAPI ${label} failed (status ${status ?? 'n/a'}): ${(err as Error).message}`,
       );
       throw new HttpException(
-        { code: 'TOUR_API_UNAVAILABLE', message: '관광정보 API 호출 실패' },
+        {
+          code: 'TOUR_API_UNAVAILABLE',
+          message: '관광정보 API 호출 실패',
+        },
         HttpStatus.BAD_GATEWAY,
       );
     }

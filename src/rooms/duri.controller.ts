@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -12,8 +13,14 @@ import {
 } from '../common/decorators/current-user.decorator';
 import { DuriService } from './duri.service';
 import { OptimizeDto, ReplacePlaceDto } from './dto/room.dto';
+import {
+  AnalysisReportDto,
+  DuriSuggestPlacesDto,
+  MatchResultDto,
+  RoomScheduleDto,
+} from '../common/dto/swagger-responses.dto';
 
-@ApiTags('duri')
+@ApiTags('두리 도우미')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('rooms/:roomId/duri')
@@ -22,7 +29,11 @@ export class DuriController {
   constructor(private readonly duriService: DuriService) {}
 
   @Post('suggest-places')
-  @ApiOperation({ summary: '장소 추천 (rule-based MVP)' })
+  @ApiOperation({
+    summary: '장소 추천',
+    description: '규칙 기반 MVP. 방 멤버 취향·후보를 참고해 장소를 제안합니다.',
+  })
+  @ApiOkResponse({ type: DuriSuggestPlacesDto })
   suggestPlaces(
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
@@ -54,6 +65,7 @@ export class DuriController {
 
   @Post('reflect-preferences')
   @ApiOperation({ summary: '멤버 취향 반영 (compatibility 재사용)' })
+  @ApiOkResponse({ type: MatchResultDto })
   reflectPreferences(
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
@@ -73,6 +85,7 @@ export class DuriController {
 
   @Post('generate-draft')
   @ApiOperation({ summary: '일정 초안 생성' })
+  @ApiOkResponse({ type: RoomScheduleDto })
   generateDraft(
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
@@ -82,6 +95,7 @@ export class DuriController {
 
   @Post('analysis-report')
   @ApiOperation({ summary: '분석 리포트 생성' })
+  @ApiOkResponse({ type: AnalysisReportDto })
   createReport(
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
@@ -91,6 +105,7 @@ export class DuriController {
 
   @Get('analysis-report/latest')
   @ApiOperation({ summary: '최신 분석 리포트 조회' })
+  @ApiOkResponse({ type: AnalysisReportDto })
   latestReport(
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,

@@ -12,6 +12,7 @@ import { RoomsController } from './rooms.controller';
 import { InvitesController } from './invites.controller';
 import { DuriService } from './duri.service';
 import { DuriController } from './duri.controller';
+import { TourModule } from '../tour/tour.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { DuriController } from './duri.controller';
       { name: Place.name, schema: PlaceSchema },
       { name: AnalysisReport.name, schema: AnalysisReportSchema },
     ]),
+    TourModule,
   ],
   providers: [RoomsService, DuriService],
   controllers: [RoomsController, InvitesController, DuriController],

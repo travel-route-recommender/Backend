@@ -224,9 +224,18 @@ const doc = {
       },
       AddCandidateDto: {
         type: 'object',
-        required: ['placeId'],
+        description: 'placeId(mongo) 또는 tourContentId 둘 중 하나 필수',
         properties: {
-          placeId: { type: 'string' },
+          placeId: { type: 'string', description: 'mongo placeId' },
+          tourContentId: {
+            type: 'string',
+            description: 'TourAPI contentId. 지정 시 백엔드가 upsert 후 후보 추가',
+          },
+          contentTypeId: {
+            type: 'integer',
+            enum: [12, 14, 15, 25, 28, 32, 38, 39],
+            description: 'tourContentId와 함께 사용',
+          },
           note: { type: 'string' },
         },
       },
@@ -349,6 +358,86 @@ const doc = {
             },
           },
         ],
+      },
+      TourFestivalCard: {
+        allOf: [
+          { $ref: '#/components/schemas/TourPlaceCard' },
+          {
+            type: 'object',
+            properties: {
+              eventStartDate: { type: 'string', nullable: true, example: '20260505' },
+              eventEndDate: { type: 'string', nullable: true, example: '20260505' },
+            },
+          },
+        ],
+      },
+      TourFestivalPage: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/TourFestivalCard' },
+          },
+          meta: {
+            type: 'object',
+            properties: {
+              total: { type: 'integer' },
+              page: { type: 'integer' },
+              size: { type: 'integer' },
+            },
+          },
+        },
+      },
+      TourSyncCard: {
+        allOf: [
+          { $ref: '#/components/schemas/TourPlaceCard' },
+          {
+            type: 'object',
+            properties: {
+              showFlag: { type: 'string', nullable: true },
+              modifiedTime: { type: 'string', nullable: true },
+            },
+          },
+        ],
+      },
+      TourSyncPage: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/TourSyncCard' },
+          },
+          meta: {
+            type: 'object',
+            properties: {
+              total: { type: 'integer' },
+              page: { type: 'integer' },
+              size: { type: 'integer' },
+            },
+          },
+        },
+      },
+      TourPetInfo: {
+        type: 'object',
+        properties: {
+          contentId: { type: 'string' },
+          acmpyType: { type: 'string', nullable: true, description: '동반 유형' },
+          acmpyAnimal: { type: 'string', nullable: true, description: '동반 가능 동물' },
+          needMaterial: { type: 'string', nullable: true, description: '필요 준비물' },
+          etcInfo: { type: 'string', nullable: true, description: '기타 안내' },
+          facility: { type: 'string', nullable: true, description: '구비 시설' },
+          furnishedItems: { type: 'string', nullable: true, description: '비치 물품' },
+          rentalItems: { type: 'string', nullable: true, description: '대여 물품' },
+          purchaseItems: { type: 'string', nullable: true, description: '구매 물품' },
+          accidentRisk: { type: 'string', nullable: true, description: '사고 대비사항' },
+        },
+      },
+      TourCodeItem: {
+        type: 'object',
+        properties: {
+          code: { type: 'string' },
+          name: { type: 'string' },
+        },
       },
     },
   },
@@ -1149,6 +1238,136 @@ const doc = {
           502: {
             description: 'TOUR_API_UNAVAILABLE',
             ...json({ $ref: '#/components/schemas/ErrorBody' }),
+          },
+        },
+      },
+    },
+    '/tour/places/{contentId}/pet': {
+      get: {
+        tags: ['tour'],
+        summary: 'KorService2 반려동물 동반 정보 (detailPetTour2). 미등록 시 null. 비인증',
+        parameters: [
+          { name: 'contentId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            ...json({
+              oneOf: [
+                { $ref: '#/components/schemas/TourPetInfo' },
+                { type: 'null' },
+              ],
+            }),
+          },
+        },
+      },
+    },
+    '/tour/places/{contentId}/similar': {
+      get: {
+        tags: ['tour'],
+        summary:
+          '비슷한 장소: 주변 같은 유형 관광지 (locationBasedList2 거리순). 자기 자신 제외. 비인증',
+        parameters: [
+          { name: 'contentId', in: 'path', required: true, schema: { type: 'string' } },
+          {
+            name: 'contentTypeId',
+            in: 'query',
+            schema: { type: 'integer', enum: [12, 14, 15, 25, 28, 32, 38, 39] },
+          },
+        ],
+        responses: {
+          200: { ...json({ $ref: '#/components/schemas/TourPlacePage' }) },
+        },
+      },
+    },
+    '/tour/places/sync': {
+      get: {
+        tags: ['tour'],
+        summary:
+          'KorService2 동기화용 목록 (areaBasedSyncList2). 배치·캐시 갱신용, showFlag/modifiedTime 포함. 비인증',
+        parameters: [
+          { name: 'areaCode', in: 'query', schema: { type: 'string' } },
+          { name: 'sigunguCode', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'contentTypeId',
+            in: 'query',
+            schema: { type: 'integer', enum: [12, 14, 15, 25, 28, 32, 38, 39] },
+          },
+          { name: 'modifiedtime', in: 'query', schema: { type: 'string', example: '20260101000000' } },
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'size', in: 'query', schema: { type: 'integer', default: 100 } },
+        ],
+        responses: {
+          200: { ...json({ $ref: '#/components/schemas/TourSyncPage' }) },
+        },
+      },
+    },
+    '/tour/festivals': {
+      get: {
+        tags: ['tour'],
+        summary:
+          'KorService2 행사·축제 (searchFestival2). eventStartDate 미지정 시 오늘부터. 비인증',
+        parameters: [
+          { name: 'eventStartDate', in: 'query', schema: { type: 'string', example: '20260101' } },
+          { name: 'eventEndDate', in: 'query', schema: { type: 'string', example: '20261231' } },
+          { name: 'areaCode', in: 'query', schema: { type: 'string' } },
+          { name: 'sigunguCode', in: 'query', schema: { type: 'string' } },
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'size', in: 'query', schema: { type: 'integer', default: 20 } },
+        ],
+        responses: {
+          200: { ...json({ $ref: '#/components/schemas/TourFestivalPage' }) },
+        },
+      },
+    },
+    '/tour/stays': {
+      get: {
+        tags: ['tour'],
+        summary: 'KorService2 숙박 (searchStay2, contentTypeId 32). 비인증',
+        parameters: [
+          { name: 'areaCode', in: 'query', schema: { type: 'string' } },
+          { name: 'sigunguCode', in: 'query', schema: { type: 'string' } },
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'size', in: 'query', schema: { type: 'integer', default: 20 } },
+        ],
+        responses: {
+          200: { ...json({ $ref: '#/components/schemas/TourPlacePage' }) },
+        },
+      },
+    },
+    '/tour/meta/ldong-codes': {
+      get: {
+        tags: ['tour'],
+        summary:
+          'KorService2 법정동 코드 (ldongCode2). 시도/시군구 필터. 비인증',
+        parameters: [
+          { name: 'lDongRegnCd', in: 'query', schema: { type: 'string' }, description: '시도코드 (미지정 시 시도 목록)' },
+          { name: 'lDongSignguCd', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            ...json({
+              type: 'array',
+              items: { $ref: '#/components/schemas/TourCodeItem' },
+            }),
+          },
+        },
+      },
+    },
+    '/tour/meta/category-codes': {
+      get: {
+        tags: ['tour'],
+        summary:
+          'KorService2 분류체계 코드 (lclsSystmCode2). 카테고리 필터. 비인증',
+        parameters: [
+          { name: 'lclsSystm1', in: 'query', schema: { type: 'string' } },
+          { name: 'lclsSystm2', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          200: {
+            ...json({
+              type: 'array',
+              items: { $ref: '#/components/schemas/TourCodeItem' },
+            }),
           },
         },
       },

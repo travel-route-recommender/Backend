@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -14,8 +15,14 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { TravelRoom, TravelRoomDocument } from '../schemas/travel-room.schema';
+import {
+  MeResponseDto,
+  PublicUserDto,
+  TravelTypeDto,
+  TripsSummaryDto,
+} from '../common/dto/swagger-responses.dto';
 
-@ApiTags('users')
+@ApiTags('유저')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('users')
@@ -27,7 +34,11 @@ export class UsersController {
   ) {}
 
   @Get('me')
-  @ApiOperation({ summary: '내 프로필 + 여행 통계' })
+  @ApiOperation({
+    summary: '내 프로필 + 여행 통계',
+    description: '프로필과 ongoing/completed 여행 수를 함께 반환합니다.',
+  })
+  @ApiOkResponse({ type: MeResponseDto })
   async getMe(@CurrentUser() user: AuthUser) {
     const doc = await this.usersService.findById(user.userId);
     if (!doc) return null;
@@ -49,6 +60,7 @@ export class UsersController {
 
   @Get('me/travel-type')
   @ApiOperation({ summary: '두리 테스트 결과 (TravelType)' })
+  @ApiOkResponse({ type: TravelTypeDto })
   async getTravelType(@CurrentUser() user: AuthUser) {
     const doc = await this.usersService.findById(user.userId);
     return doc?.travelType ?? null;
@@ -56,6 +68,7 @@ export class UsersController {
 
   @Get('me/trips-summary')
   @ApiOperation({ summary: 'ongoing / completed 여행 수' })
+  @ApiOkResponse({ type: TripsSummaryDto })
   async getTripsSummary(@CurrentUser() user: AuthUser) {
     const doc = await this.usersService.findById(user.userId);
     if (!doc) return { ongoing: 0, completed: 0 };
@@ -73,6 +86,7 @@ export class UsersController {
 
   @Patch('me/profile')
   @ApiOperation({ summary: '프로필 수정' })
+  @ApiOkResponse({ type: PublicUserDto })
   async updateProfile(
     @CurrentUser() user: AuthUser,
     @Body() dto: UpdateProfileDto,
@@ -83,6 +97,7 @@ export class UsersController {
 
   @Patch('me/onboarding-complete')
   @ApiOperation({ summary: '온보딩 완료 처리' })
+  @ApiOkResponse({ type: PublicUserDto })
   async completeOnboarding(@CurrentUser() user: AuthUser) {
     const updated = await this.usersService.updateById(user.userId, {
       onboardingCompleted: true,

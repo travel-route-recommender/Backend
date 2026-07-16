@@ -3,10 +3,12 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -65,9 +67,31 @@ export class UpdateDestinationDto {
 }
 
 export class AddCandidateDto {
-  @ApiProperty({ example: '665abc123def456789012345' })
+  @ApiPropertyOptional({
+    example: '665abc123def456789012345',
+    description: 'mongo placeId. tourContentId와 둘 중 하나 필수',
+  })
+  @IsOptional()
   @IsMongoId()
-  placeId: string;
+  placeId?: string;
+
+  @ApiPropertyOptional({
+    example: '126508',
+    description: 'TourAPI contentId. 지정 시 백엔드가 upsert 후 후보로 추가',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, { message: 'tourContentId must be numeric' })
+  tourContentId?: string;
+
+  @ApiPropertyOptional({
+    example: 12,
+    description: 'tourContentId와 함께 쓰는 콘텐츠 타입',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([12, 14, 15, 25, 28, 32, 38, 39])
+  contentTypeId?: number;
 
   @ApiPropertyOptional({ example: '꼭 가고 싶어요' })
   @IsOptional()
