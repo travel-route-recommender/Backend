@@ -12,7 +12,7 @@ FigJam 아키텍처 기준으로 **기능 확정이 필요한 항목**입니다.
 | 1.2 | guest → 정식 계정 전환(merge) API 필요? | 진입/계정 | _미정_ |
 | 1.3 | guest onboarding은 room 단위 vs 전역? | 진입/계정 | _미정_ |
 | 1.4 | MVP 소셜 로그인: Kakao만? Google/Apple Phase 2? | 진입/계정 | _Kakao API 구현됨, 나머지 Phase 2_ |
-| 1.5 | 8문항 → TravelType 매핑 규칙 (현재: a/b count rule-based) | 퀴즈/두리 | _rule-based MVP 적용_ |
+| 1.5 | 성향 테스트 → TravelType 매핑 | 퀴즈/두리 | _확정: 일정밀도/명소필수도/로컬관심도/도전·안정 4축 rule-based. 이동·숙소·예산은 preference. 세션 API._ |
 
 ---
 
@@ -21,7 +21,7 @@ FigJam 아키텍처 기준으로 **기능 확정이 필요한 항목**입니다.
 | # | 질문 | 담당 | 결론 |
 |---|------|------|------|
 | 2.1 | 인기 여행지: 수동 큐레이션 vs save/view 집계? | 홈 | _현재: places popularityScore seed_ |
-| 2.2 | 홈 "두리 테스트" 재응시 가능? room별 별도? | 홈 | _미정_ |
+| 2.2 | 홈 "두리 테스트" 재응시 가능? room별 별도? | 홈 | _재응시 가능 (세션 새로 생성). room별 별도 테스트는 Phase 2_ |
 
 ---
 

@@ -45,13 +45,14 @@ export class OnboardingController {
   @Post('survey')
   @ApiOperation({
     summary: '온보딩 설문 제출',
-    description: '회원가입 후 한 번 받는 간단 정보. 재제출 시 덮어씁니다.',
+    description:
+      '면허·자차·이동 불편(계단/급경사/장도보)·출생연도·관심 태그. 재제출 시 덮어씁니다.',
   })
   @ApiOkResponse({ type: OnboardingSurveyDto })
   submitSurvey(
     @CurrentUser() user: AuthUser,
     @Body() dto: SubmitOnboardingSurveyDto,
   ) {
-    return this.onboardingService.submitSurvey(user.userId, dto.answers);
+    return this.onboardingService.submitSurvey(user.userId, dto);
   }
 }

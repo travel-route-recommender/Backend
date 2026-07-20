@@ -28,6 +28,27 @@ describe('Tourmate API (e2e)', () => {
       });
   });
 
+  it('/api/v1/quiz/tags (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/api/v1/quiz/tags')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.source).toBe('mock');
+        expect(Array.isArray(res.body.tags)).toBe(true);
+        expect(res.body.tags.length).toBeGreaterThan(0);
+      });
+  });
+
+  it('/api/v1/quiz/steps (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/api/v1/quiz/steps')
+      .expect(200)
+      .expect((res) => {
+        expect(Array.isArray(res.body)).toBe(true);
+        expect(res.body.length).toBe(6);
+      });
+  });
+
   afterEach(async () => {
     await app.close();
   });

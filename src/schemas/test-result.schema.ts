@@ -9,16 +9,40 @@ export class TestResult {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
-  @Prop({ type: Object, required: true })
-  answers: Record<string, string>;
+  /** in_progress | completed */
+  @Prop({ default: 'in_progress' })
+  status: 'in_progress' | 'completed';
 
-  @Prop({ type: TravelType, required: true })
-  travelType: TravelType;
+  /** 세션 중 누적 응답 */
+  @Prop({ type: Object, default: {} })
+  responses: Record<string, unknown>;
+
+  /** 레거시 8문항 답변 (호환용) */
+  @Prop({ type: Object })
+  answers?: Record<string, string>;
+
+  @Prop({ type: Object })
+  preferences?: Record<string, unknown>;
+
+  @Prop({ type: Object })
+  axes?: {
+    scheduleDensity: number;
+    landmarkNecessity: number;
+    localInterest: number;
+    challenging: number;
+  };
+
+  @Prop({ type: TravelType })
+  travelType?: TravelType;
 
   @Prop({ default: true })
   isLatest: boolean;
+
+  @Prop()
+  completedAt?: Date;
 }
 
 export const TestResultSchema = SchemaFactory.createForClass(TestResult);
 TestResultSchema.index({ userId: 1, isLatest: 1 });
 TestResultSchema.index({ userId: 1, createdAt: -1 });
+TestResultSchema.index({ userId: 1, status: 1 });

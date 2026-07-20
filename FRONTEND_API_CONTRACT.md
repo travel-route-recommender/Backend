@@ -260,82 +260,182 @@ PublicUser:
 
 ---
 
-## 4. Quiz
+## 4. Quiz (두리 성향 테스트)
+
+신규 플로우: **세션 생성 → 중간 저장 → 완료 → 성향 조회**
+
+유형(TravelType)은 아래 **4축** rule-based로 산출합니다.
+
+| 축 | 설명 | 측정 |
+|----|------|------|
+| scheduleDensity | 일정 밀도 | 일정표 feature |
+| landmarkNecessity | 명소 필수도 | 일정표 place feature |
+| localInterest | 로컬 관심도 | 일정표 place feature |
+| challenging | 도전·안정 | LESS_VALIDATED / VALIDATED (+ 0–100) |
+
+이동·숙소·예산·체력은 **유형이 아닌 preference**로 저장합니다.
+
+### GET `/quiz/steps` (비인증)
+
+테스트 스텝 메타 (schedule / transport / accommodation / validation / stamina / spending)
 
 ### GET `/quiz/questions` (비인증)
 
-```json
-[
-  {
-    "id": "q1",
-    "question": "여행 첫날 아침, 더 끌리는 쪽은?",
-    "category": "일정 밀도",
-    "options": [
-      { "id": "q1_a", "label": "8시부터 알차게 출발" },
-      { "id": "q1_b", "label": "느긋하게 준비하고 11시 출발" }
-    ]
-  }
-]
-```
+스텝을 문항 형태로도 노출 (안내용). 실제 응답은 sessions API 사용.
 
-- option id는 **`q1_a` / `q1_b`** (`"a"`/`"b"` 아님)
-- 총 8문항
+### GET `/quiz/tags` (비인증)
 
-### POST `/quiz/submit`
+예산 코인 분배용 카테고리·태그. 실데이터 없으면 `source: "mock"`.
 
 ```json
 {
-  "answers": {
-    "q1": "q1_a",
-    "q2": "q2_b",
-    "q3": "q3_a",
-    "q4": "q4_b",
-    "q5": "q5_a",
-    "q6": "q6_b",
-    "q7": "q7_a",
-    "q8": "q8_b"
+  "source": "mock",
+  "categories": ["ACCOMMODATION", "FOOD", "TRANSPORT", "TOURISM", "ACTIVITY", "SHOPPING", "CAFE_REST"],
+  "tags": [
+    {
+      "id": "tag-food",
+      "category": "FOOD",
+      "label": "음식",
+      "examples": ["맛집", "로컬식당", "해산물"]
+    }
+  ]
+}
+```
+
+### POST `/quiz/sessions` (인증)
+
+새 `in_progress` 세션 생성. 이전 `isLatest` 해제.
+
+```json
+{
+  "id": "...",
+  "status": "in_progress",
+  "responses": {},
+  "answeredCount": 0,
+  "totalSteps": 6,
+  "travelType": null,
+  "axes": null,
+  "preferences": null,
+  "completedAt": null
+}
+```
+
+### PATCH `/quiz/sessions/:sessionId` (인증)
+
+응답 **중간 저장** (merge).
+
+```json
+{
+  "responses": {
+    "scheduleDraft": [
+      {
+        "startMinutes": 540,
+        "endMinutes": 660,
+        "kind": "PLACE",
+        "placeName": "성산일출봉",
+        "landmarkScore": 90,
+        "localScore": 20
+      },
+      {
+        "startMinutes": 660,
+        "endMinutes": 720,
+        "kind": "REST"
+      }
+    ],
+    "transportPreferences": {
+      "CAR": 20,
+      "PUBLIC_TRANSIT": 90,
+      "WALKING": 60,
+      "TAXI": 30
+    },
+    "accommodationPreference": {
+      "stayImportance": 30,
+      "facilityOverLocation": 40,
+      "comfortOverPrice": 65
+    },
+    "placeValidationPreference": "LESS_VALIDATED",
+    "challenging": 80,
+    "staminaLevel": "NORMAL",
+    "spendingAllocation": {
+      "totalCoins": 100,
+      "allocation": {
+        "ACCOMMODATION": 20,
+        "FOOD": 30,
+        "TRANSPORT": 10,
+        "TOURISM": 10,
+        "ACTIVITY": 20,
+        "SHOPPING": 5,
+        "CAFE_REST": 5
+      }
+    }
   }
 }
 ```
+
+- `scheduleDraft`만 보내도 서버가 `scheduleFeatures` / `placeFeatures`를 추출합니다.
+- 프론트가 이미 feature를 계산했다면 `scheduleFeatures` / `placeFeatures`를 직접 넣어도 됩니다.
+
+### POST `/quiz/sessions/:sessionId/complete` (인증)
+
+완료 + 진단. body의 `responses`는 optional (마지막 merge).
 
 성공:
 
 ```json
 {
+  "sessionId": "...",
   "travelType": {
-    "name": "감성 여유형 여행자",
+    "name": "도전적인 탐험가",
     "description": "...",
-    "tags": ["바다", "카페", "..."],
+    "tags": ["숨은명소", "액티비티", "로컬", "도전"],
     "warning": "...",
-    "emoji": "🌊"
+    "emoji": "🔥"
   },
-  "user": { "...": "갱신된 PublicUser" }
+  "axes": {
+    "scheduleDensity": 72,
+    "landmarkNecessity": 66,
+    "localInterest": 34,
+    "challenging": 80
+  },
+  "preferences": {
+    "transportPreferences": { "...": "..." },
+    "accommodationPreference": { "...": "..." },
+    "placeValidationPreference": "LESS_VALIDATED",
+    "challenging": 80,
+    "staminaLevel": "NORMAL",
+    "spendingAllocation": { "...": "..." },
+    "scheduleFeatures": { "...": "..." },
+    "placeFeatures": { "...": "..." }
+  },
+  "stamina": { "staminaLevel": "NORMAL", "staminaScore": 55 },
+  "user": { "...": "PublicUser" }
 }
 ```
 
-| 결과 type (내부) | name |
-|------------------|------|
-| relaxed | 감성 여유형 여행자 |
-| explorer | 알차게 즐기는 탐험형 |
-| balanced | 균형 잡힌 여행자 |
+- User.travelType / quizPreferences / personalityAxes 캐시 갱신
+- `test_results`에 이력 저장, 재응시 가능
 
-- 점수 필드 없음  
-- tags/warning/emoji 포함  
-- User.travelType 캐시 갱신 + `test_results`에 이력 저장  
-- **재응시 가능** (이전 isLatest=false)
+### GET `/quiz/me` (인증)
 
-### GET `/quiz/status`
+최신 완료 성향 조회.
+
+### GET `/quiz/status` (인증)
 
 ```json
 {
   "completed": true,
-  "onboardingCompleted": false,
-  "answeredCount": 8,
-  "totalQuestions": 8
+  "onboardingCompleted": true,
+  "sessionId": "...",
+  "status": "completed",
+  "answeredCount": 6,
+  "totalQuestions": 6,
+  "totalSteps": 6
 }
 ```
 
-부분 저장 API 없음. submit가 전체 답변을 한 번에 받음.
+### POST `/quiz/submit` (레거시, deprecated)
+
+구 8문항 한 방 제출. 신규는 sessions 플로우 사용.
 
 ---
 
@@ -636,19 +736,43 @@ PATCH /rooms/:roomId/destination
 
 ---
 
-## 14. Onboarding (추가)
+## 14. Onboarding
 
-가입 후 간단 설문 (퀴즈와 별개):
+가입 직후 사전 정보 (퀴즈와 별개):
 
 - `GET /onboarding/status`
-- `GET|POST /onboarding/survey` — `{ answers: Record<string,string> }`
+- `GET|POST /onboarding/survey`
+
+### POST `/onboarding/survey` body
+
+```json
+{
+  "hasLicense": true,
+  "hasCar": false,
+  "mobilityConstraints": ["STAIRS", "LONG_WALK"],
+  "birthYear": 2003,
+  "age": 23,
+  "tags": ["카페", "바다", "맛집"],
+  "answers": { "preferredCompanion": "friends" }
+}
+```
+
+| 필드 | 설명 |
+|------|------|
+| hasLicense / hasCar | 면허·자차 |
+| mobilityConstraints | `STAIRS` \| `STEEP_SLOPE` \| `LONG_WALK` 만 (민감정보 최소화) |
+| birthYear / age | 체력 보정용 |
+| tags | 관심 태그 |
+| answers | 기타 자유 형식 (optional) |
+
+User에도 `hasLicense`, `hasCar`, `mobilityConstraints`, `birthYear`, `interestTags` 캐시. 제출 시 `onboardingCompleted: true`.
 
 ---
 
 ## 15. 프론트 연동 우선순위 체크리스트
 
 1. ✅ Auth 토큰 계약 (body refresh, Bearer access)  
-2. ✅ Users / Quiz DTO  
+2. ✅ Users / Quiz DTO (세션 플로우)  
 3. ✅ CreateRoomDto + Room 응답  
 4. ✅ Schedule item / reorder / PUT batch  
 5. ✅ Places search + source 한계  
@@ -656,5 +780,6 @@ PATCH /rooms/:roomId/destination
 7. ⚠️ Places batch 없음  
 8. ⚠️ Duri는 stub — 자동 적용 비권장  
 9. ⚠️ KTO OpenAPI 미연동  
+10. ✅ 성향 테스트: 일정표 feature + 4축 유형 + preference 분리  
 
 질문/추가 구현이 필요하면 Backend 쪽에서 `POST /places/batch`, `GET /destinations`, 오류 `code` 필드 등을 이어서 맞출 수 있습니다.

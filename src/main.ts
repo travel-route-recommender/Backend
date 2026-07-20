@@ -80,8 +80,11 @@ Tourmate / TripMatch 백엔드 API입니다.
     // 태그 순서 = Swagger UI에 보이는 순서
     .addTag('인증', '회원가입 · 로그인 · 토큰 갱신 · 게스트 초대 입장')
     .addTag('유저', '내 프로필 · 여행 타입 · 온보딩 완료')
-    .addTag('온보딩', '회원가입 직후 짧은 설문 (두리 테스트와 별개)')
-    .addTag('두리 테스트', '성향 테스트 8문항 · TravelType 결과')
+    .addTag('온보딩', '면허·자차·이동 제약·관심 태그 (두리 테스트와 별개)')
+    .addTag(
+      '두리 테스트',
+      '세션·중간저장·완료 · 4축 rule-based TravelType + preference',
+    )
     .addTag(
       '관광 탐색 · TourAPI',
       '한국관광공사 KorService2. 관광지·축제·숙박·상세의 메인 소스. contentId 기준.',

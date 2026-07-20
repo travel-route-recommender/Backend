@@ -210,13 +210,35 @@ export class OnboardingStatusDto {
 }
 
 export class OnboardingSurveyDto {
-  @ApiProperty({
-    example: { ageGroup: '20s', travelStyle: 'relax' },
+  @ApiPropertyOptional({
+    example: { preferredCompanion: 'friends' },
   })
-  answers: Record<string, string>;
+  answers?: Record<string, unknown>;
 
-  @ApiProperty()
-  completedAt: Date;
+  @ApiPropertyOptional({ example: true, nullable: true })
+  hasLicense?: boolean | null;
+
+  @ApiPropertyOptional({ example: false, nullable: true })
+  hasCar?: boolean | null;
+
+  @ApiProperty({
+    example: ['STAIRS', 'LONG_WALK'],
+    enum: ['STAIRS', 'STEEP_SLOPE', 'LONG_WALK'],
+    isArray: true,
+  })
+  mobilityConstraints: string[];
+
+  @ApiPropertyOptional({ example: 2003, nullable: true })
+  birthYear?: number | null;
+
+  @ApiPropertyOptional({ example: 23, nullable: true })
+  age?: number | null;
+
+  @ApiProperty({ example: ['카페', '바다'] })
+  tags: string[];
+
+  @ApiPropertyOptional()
+  completedAt?: Date;
 }
 
 export class QuizOptionDto {
@@ -248,11 +270,24 @@ export class QuizStatusDto {
   @ApiProperty({ example: true })
   onboardingCompleted: boolean;
 
-  @ApiProperty({ example: 8 })
+  @ApiPropertyOptional({ example: '665abc123def456789012345', nullable: true })
+  sessionId?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'in_progress',
+    enum: ['in_progress', 'completed'],
+    nullable: true,
+  })
+  status?: string | null;
+
+  @ApiProperty({ example: 3 })
   answeredCount: number;
 
-  @ApiProperty({ example: 8 })
+  @ApiProperty({ example: 6 })
   totalQuestions: number;
+
+  @ApiProperty({ example: 6 })
+  totalSteps: number;
 }
 
 export class QuizSubmitResultDto {

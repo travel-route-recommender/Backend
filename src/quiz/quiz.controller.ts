@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -11,7 +19,11 @@ import {
   CurrentUser,
 } from '../common/decorators/current-user.decorator';
 import { QuizService } from './quiz.service';
-import { SubmitQuizDto } from './dto/submit-quiz.dto';
+import {
+  CompleteQuizSessionDto,
+  PatchQuizSessionDto,
+  SubmitQuizDto,
+} from './dto/quiz-session.dto';
 import {
   QuizQuestionDto,
   QuizStatusDto,
@@ -25,23 +37,35 @@ export class QuizController {
 
   @Get('questions')
   @ApiOperation({
-    summary: '두리 테스트 문항 조회',
+    summary: '테스트 스텝 목록 (문항 형태)',
     description:
-      '8문항. 로그인 없이 조회 가능합니다. 제출(`/quiz/submit`)만 인증이 필요합니다.',
+      '프론트 안내용 스텝 메타입니다. 실제 응답은 `/quiz/sessions`로 저장하세요.',
   })
   @ApiOkResponse({ type: QuizQuestionDto, isArray: true })
   getQuestions() {
     return this.quizService.getQuestions();
   }
 
+  @Get('steps')
+  @ApiOperation({ summary: '테스트 스텝 메타 조회' })
+  getSteps() {
+    return this.quizService.getSteps();
+  }
+
+  @Get('tags')
+  @ApiOperation({
+    summary: '예산 소비 테스트용 태그/카테고리',
+    description:
+      '매장·장소 태그 API가 없으면 mock 데이터를 반환합니다. source=mock.',
+  })
+  getTags() {
+    return this.quizService.getTags();
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('status')
-  @ApiOperation({
-    summary: '테스트 진행·완료 상태',
-    description:
-      '이미 TravelType이 있는지, 최신 결과 요약을 확인할 때 사용합니다.',
-  })
+  @ApiOperation({ summary: '테스트 진행·완료 상태' })
   @ApiOkResponse({ type: QuizStatusDto })
   getStatus(@CurrentUser() user: AuthUser) {
     return this.quizService.getStatus(user.userId);
@@ -49,11 +73,72 @@ export class QuizController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @Get('me')
+  @ApiOperation({
+    summary: '내 최신 성향 조회',
+    description: '완료된 테스트의 travelType · axes · preferences를 반환합니다.',
+  })
+  getMe(@CurrentUser() user: AuthUser) {
+    return this.quizService.getMe(user.userId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('sessions')
+  @ApiOperation({
+    summary: '테스트 세션 생성',
+    description: '새 in_progress 세션을 만들고 이전 isLatest를 해제합니다.',
+  })
+  createSession(@CurrentUser() user: AuthUser) {
+    return this.quizService.createSession(user.userId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('sessions/:sessionId')
+  @ApiOperation({
+    summary: '응답 중간 저장',
+    description: '보낸 responses 필드를 기존 세션에 merge합니다.',
+  })
+  patchSession(
+    @CurrentUser() user: AuthUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: PatchQuizSessionDto,
+  ) {
+    return this.quizService.patchSession(
+      user.userId,
+      sessionId,
+      dto.responses,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('sessions/:sessionId/complete')
+  @ApiOperation({
+    summary: '테스트 완료 → rule-based 성향 진단',
+    description:
+      '선택적으로 마지막 responses를 함께 보낼 수 있습니다. 4축 + TravelType + preferences 저장.',
+  })
+  completeSession(
+    @CurrentUser() user: AuthUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CompleteQuizSessionDto,
+  ) {
+    return this.quizService.completeSession(
+      user.userId,
+      sessionId,
+      dto?.responses,
+    );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @Post('submit')
   @ApiOperation({
-    summary: '답변 제출 → TravelType 결과',
-    description:
-      '결과를 저장하고 User.travelType 캐시를 갱신합니다. 재테스트도 가능합니다.',
+    summary: '[레거시] 한 방 제출',
+    description: '신규 플로우는 `/quiz/sessions`를 사용하세요.',
+    deprecated: true,
   })
   @ApiOkResponse({ type: QuizSubmitResultDto })
   submit(@CurrentUser() user: AuthUser, @Body() dto: SubmitQuizDto) {
