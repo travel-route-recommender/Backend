@@ -59,8 +59,9 @@ FigJam 아키텍처 기준으로 **기능 확정이 필요한 항목**입니다.
 | # | 질문 | 담당 | 결론 |
 |---|------|------|------|
 | 6.1 | progress 계산식 | 여행방 홈 | _5단계 heuristic MVP_ |
-| 6.2 | N명 그룹 궁합 알고리즘 | 매칭 | _2인 tag intersection 확장 필요_ |
+| 6.2 | N명 그룹 궁합 알고리즘 | 매칭 | _MVP: N명 pairwise tag intersection 평균. axes/preferences는 알고리즘 스펙 수신 후 확장_ |
 | 6.3 | owner/member 권한 | 여행방 홈 | _owner만 invite 재발급_ |
+| 6.4 | 워크스페이스 동시 수정 | 일정 | _일정 batch에 scheduleVersion optimistic lock 적용. 멤버 전원 수정 가능_ |
 
 ---
 

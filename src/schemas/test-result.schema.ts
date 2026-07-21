@@ -38,11 +38,16 @@ export class TestResult {
   @Prop({ default: true })
   isLatest: boolean;
 
+  /** 가장 최근 완료 결과 여부 (재테스트 중단 시에도 유지) */
+  @Prop({ default: false })
+  isLatestCompleted: boolean;
+
   @Prop()
   completedAt?: Date;
 }
 
 export const TestResultSchema = SchemaFactory.createForClass(TestResult);
 TestResultSchema.index({ userId: 1, isLatest: 1 });
+TestResultSchema.index({ userId: 1, isLatestCompleted: 1 });
 TestResultSchema.index({ userId: 1, createdAt: -1 });
 TestResultSchema.index({ userId: 1, status: 1 });

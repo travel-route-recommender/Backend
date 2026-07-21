@@ -403,11 +403,26 @@ export class OngoingTripDto {
   @ApiProperty({ example: '2026-07-14T12:00:00.000Z' })
   lastUpdated: string;
 
-  @ApiProperty({ example: '멤버 2명 · 후보 5곳' })
+  @ApiProperty({ example: '제주 여행 계획' })
   summary: string;
 
   @ApiProperty({ example: 3 })
   currentStep: number;
+
+  @ApiPropertyOptional({ example: '2026-07-25T00:00:00.000Z', nullable: true })
+  startDate?: string | null;
+
+  @ApiPropertyOptional({ example: '2026-07-26T00:00:00.000Z', nullable: true })
+  endDate?: string | null;
+
+  @ApiProperty({ example: 3 })
+  memberCount: number;
+
+  @ApiPropertyOptional({ example: 2, nullable: true, description: '여행 일수' })
+  durationDays?: number | null;
+
+  @ApiProperty({ example: 5 })
+  candidateCount: number;
 }
 
 export class InviteLinkDto {

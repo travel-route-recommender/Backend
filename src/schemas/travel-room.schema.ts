@@ -158,6 +158,10 @@ export class TravelRoom {
 
   @Prop()
   selectedCourseId?: string;
+
+  /** optimistic concurrency for schedule batch saves */
+  @Prop({ default: 0 })
+  scheduleVersion: number;
 }
 
 export const TravelRoomSchema = SchemaFactory.createForClass(TravelRoom);

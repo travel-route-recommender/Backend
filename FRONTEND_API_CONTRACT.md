@@ -487,13 +487,41 @@ PublicUser:
   "scheduleStyle": null,
   "selectedCourseId": null,
   "candidateCount": 0,
-  "scheduleItemCount": 0
+  "scheduleItemCount": 0,
+  "scheduleVersion": 0
 }
 ```
 
 ### GET `/rooms/me?status=ongoing`
 
-요약 배열 (`id`, `title`, `destination` string, `status`, `progressLabel`, `lastUpdated`, `summary`, `currentStep`)
+카드용 요약 배열:
+
+```json
+{
+  "id": "...",
+  "title": "제주 여행",
+  "destination": "제주",
+  "status": "ongoing",
+  "progressLabel": "일정 짜는 중",
+  "lastUpdated": "2026-07-14T12:00:00.000Z",
+  "summary": "제주 여행 계획",
+  "currentStep": 3,
+  "startDate": "2026-07-25T00:00:00.000Z",
+  "endDate": "2026-07-26T00:00:00.000Z",
+  "memberCount": 3,
+  "durationDays": 2,
+  "candidateCount": 5
+}
+```
+
+### 일정 저장 동시성
+
+- `GET /rooms/:id/schedule` → `{ days, scheduleVersion }`
+- `PUT /rooms/:id/schedule` body에 `expectedVersion` 포함 권장
+- version mismatch 시 **409 Conflict** (`currentVersion` 포함)
+- reorder는 해당 day의 **모든 item id exact permutation** 필수
+- `UpdateScheduleItemDto`에 `reason` 포함
+- `startTime`/`endTime`은 `HH:mm`, start < end, `day`는 여행 기간 내
 
 ### POST `/rooms/from-compatibility`
 
@@ -726,10 +754,34 @@ PATCH /rooms/:roomId/destination
 
 | API | 비고 |
 |-----|------|
+| GET `/invites/:code/preview` | **비인증** 미리보기 (여행지·기간·멤버수·방장) |
 | GET `/rooms/:id/invite-link` | `{ inviteCode, inviteLink }` |
 | POST `/rooms/:id/invites` | owner만, 코드 **즉시 교체** (만료 필드 없음) |
 | POST `/invites/:code/accept` | 기존 유저 + Bearer |
 | POST `/auth/join-by-invite` | guest 생성 + tokens + roomId |
+
+### GET `/invites/:code/preview` (비인증)
+
+```json
+{
+  "inviteCode": "ABCD1234",
+  "title": "부산 여행",
+  "destination": "부산",
+  "startDate": "2026-07-25T00:00:00.000Z",
+  "endDate": "2026-07-26T00:00:00.000Z",
+  "durationDays": 2,
+  "memberCount": 3,
+  "ownerNickname": "수민",
+  "status": "ongoing",
+  "previewText": {
+    "headline": "부산 1박 2일 여행에 초대받았어요",
+    "destination": "부산",
+    "period": "7월 25일 ~ 7월 26일",
+    "memberCount": 3,
+    "ownerNickname": "수민"
+  }
+}
+```
 
 기본 링크: `tripmatch://invite/{code}`  
 웹 URL은 `INVITE_LINK_BASE`를 `https://app.example.com/invite`처럼 바꾸거나, 프론트에서 code만 파싱.

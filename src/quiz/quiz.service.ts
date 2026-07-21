@@ -12,11 +12,13 @@ import {
   QUIZ_STEPS,
   MOCK_SPENDING_TAGS,
   SPENDING_CATEGORIES,
+  areAllStepsAnswered,
   buildPreferences,
   calculateTravelType,
   computePersonalityAxes,
   countAnsweredSteps,
   deriveTravelType,
+  missingSteps,
   resolveStaminaLevel,
 } from './quiz.data';
 import { QuizResponses } from './quiz.types';
@@ -46,66 +48,100 @@ export class QuizService {
     };
   }
 
-  async getLatestResult(userId: string) {
+  /** 최신 시도 (진행 중일 수 있음) */
+  async getLatestAttempt(userId: string) {
     return this.testResultModel
       .findOne({ userId: new Types.ObjectId(userId), isLatest: true })
       .exec();
   }
 
+  /** 최신 완료 결과 (재테스트 중단해도 유지) */
+  async getLatestCompleted(userId: string) {
+    return this.testResultModel
+      .findOne({
+        userId: new Types.ObjectId(userId),
+        status: 'completed',
+        isLatestCompleted: true,
+      })
+      .exec()
+      .then(async (doc) => {
+        if (doc) return doc;
+        return this.testResultModel
+          .findOne({
+            userId: new Types.ObjectId(userId),
+            status: 'completed',
+          })
+          .sort({ completedAt: -1 })
+          .exec();
+      });
+  }
+
   async getStatus(userId: string) {
-    const [user, latestResult] = await Promise.all([
+    const [user, attempt, completed] = await Promise.all([
       this.usersService.findById(userId),
-      this.getLatestResult(userId),
+      this.getLatestAttempt(userId),
+      this.getLatestCompleted(userId),
     ]);
 
-    const responses = (latestResult?.responses ?? {}) as QuizResponses;
+    const responses = (attempt?.responses ?? {}) as QuizResponses;
     return {
-      completed: latestResult?.status === 'completed',
+      completed: Boolean(completed?.travelType ?? user?.travelType),
       onboardingCompleted: user?.onboardingCompleted ?? false,
-      sessionId: latestResult?._id?.toString() ?? null,
-      status: latestResult?.status ?? null,
+      sessionId: attempt?._id?.toString() ?? completed?._id?.toString() ?? null,
+      activeSessionId:
+        attempt?.status === 'in_progress' ? attempt._id.toString() : null,
+      status: attempt?.status ?? completed?.status ?? null,
       answeredCount: countAnsweredSteps(responses),
       totalQuestions: QUIZ_STEPS.length,
       totalSteps: QUIZ_STEPS.length,
+      missingSteps:
+        attempt?.status === 'in_progress' ? missingSteps(responses) : [],
     };
   }
 
   async getMe(userId: string) {
-    const [user, latest] = await Promise.all([
+    const [user, attempt, completed] = await Promise.all([
       this.usersService.findById(userId),
-      this.getLatestResult(userId),
+      this.getLatestAttempt(userId),
+      this.getLatestCompleted(userId),
     ]);
 
-    if (!latest || latest.status !== 'completed') {
+    const result = completed;
+    if (!result) {
       return {
         completed: false,
         travelType: user?.travelType ?? null,
         axes: user?.personalityAxes ?? null,
         preferences: user?.quizPreferences ?? null,
         stamina: null,
+        activeSessionId:
+          attempt?.status === 'in_progress' ? attempt._id.toString() : null,
       };
     }
 
     const stamina = resolveStaminaLevel({
-      staminaLevel: (latest.responses as QuizResponses)?.staminaLevel,
+      staminaLevel: (result.responses as QuizResponses)?.staminaLevel,
       birthYear: user?.birthYear,
       mobilityConstraints: user?.mobilityConstraints,
     });
 
     return {
       completed: true,
-      sessionId: latest._id.toString(),
-      travelType: latest.travelType ?? user?.travelType ?? null,
-      axes: latest.axes ?? user?.personalityAxes ?? null,
-      preferences: latest.preferences ?? user?.quizPreferences ?? null,
+      sessionId: result._id.toString(),
+      travelType: result.travelType ?? user?.travelType ?? null,
+      axes: result.axes ?? user?.personalityAxes ?? null,
+      preferences: result.preferences ?? user?.quizPreferences ?? null,
       stamina,
-      completedAt: latest.completedAt,
+      completedAt: result.completedAt,
+      activeSessionId:
+        attempt?.status === 'in_progress' ? attempt._id.toString() : null,
     };
   }
 
   async createSession(userId: string) {
     const userObjectId = new Types.ObjectId(userId);
 
+    // 이전 시도의 isLatest만 해제. 완료 결과(isLatestCompleted)는 유지.
     await this.testResultModel.updateMany(
       { userId: userObjectId, isLatest: true },
       { isLatest: false },
@@ -116,6 +152,7 @@ export class QuizService {
       status: 'in_progress',
       responses: {},
       isLatest: true,
+      isLatestCompleted: false,
     });
 
     return this.formatSession(session);
@@ -137,7 +174,11 @@ export class QuizService {
     return this.formatSession(session);
   }
 
-  async completeSession(userId: string, sessionId: string, dto?: QuizResponsesDto) {
+  async completeSession(
+    userId: string,
+    sessionId: string,
+    dto?: QuizResponsesDto,
+  ) {
     const session = await this.findOwnedSession(userId, sessionId);
     if (session.status === 'completed') {
       throw new BadRequestException('이미 완료된 세션입니다.');
@@ -151,10 +192,10 @@ export class QuizService {
     }
 
     const responses = session.responses as QuizResponses;
-    const answered = countAnsweredSteps(responses);
-    if (answered < 1) {
+    if (!areAllStepsAnswered(responses)) {
+      const missing = missingSteps(responses);
       throw new BadRequestException(
-        '최소 한 개 이상의 테스트 응답이 필요합니다.',
+        `모든 테스트 단계(${QUIZ_STEPS.length}개)를 완료해야 합니다. 부족한 단계: ${missing.join(', ')}`,
       );
     }
 
@@ -172,11 +213,19 @@ export class QuizService {
       preferences.staminaLevel = stamina.staminaLevel;
     }
 
+    const userObjectId = new Types.ObjectId(userId);
+    await this.testResultModel.updateMany(
+      { userId: userObjectId, isLatestCompleted: true },
+      { isLatestCompleted: false },
+    );
+
     session.status = 'completed';
     session.axes = axes;
     session.preferences = preferences as unknown as Record<string, unknown>;
     session.travelType = travelType;
     session.completedAt = new Date();
+    session.isLatest = true;
+    session.isLatestCompleted = true;
     await session.save();
 
     const updatedUser = await this.usersService.updateById(userId, {
@@ -191,9 +240,7 @@ export class QuizService {
       axes,
       preferences,
       stamina,
-      user: updatedUser
-        ? this.usersService.toPublicUser(updatedUser)
-        : null,
+      user: updatedUser ? this.usersService.toPublicUser(updatedUser) : null,
     };
   }
 
@@ -206,6 +253,10 @@ export class QuizService {
       { userId: userObjectId, isLatest: true },
       { isLatest: false },
     );
+    await this.testResultModel.updateMany(
+      { userId: userObjectId, isLatestCompleted: true },
+      { isLatestCompleted: false },
+    );
 
     await this.testResultModel.create({
       userId: userObjectId,
@@ -214,6 +265,7 @@ export class QuizService {
       responses: { legacyAnswers: answers },
       travelType,
       isLatest: true,
+      isLatestCompleted: true,
       completedAt: new Date(),
     });
 
@@ -248,6 +300,7 @@ export class QuizService {
       responses,
       answeredCount: countAnsweredSteps(responses),
       totalSteps: QUIZ_STEPS.length,
+      missingSteps: missingSteps(responses),
       travelType: session.travelType ?? null,
       axes: session.axes ?? null,
       preferences: session.preferences ?? null,

@@ -362,6 +362,29 @@ export function countAnsweredSteps(responses: QuizResponses): number {
   return n;
 }
 
+/** 6단계가 모두 채워졌는지 */
+export function areAllStepsAnswered(responses: QuizResponses): boolean {
+  return countAnsweredSteps(responses) >= QUIZ_STEPS.length;
+}
+
+export function missingSteps(responses: QuizResponses): string[] {
+  const missing: string[] = [];
+  if (!(responses.scheduleDraft?.length || responses.scheduleFeatures)) {
+    missing.push('schedule');
+  }
+  if (!responses.transportPreferences) missing.push('transport');
+  if (!responses.accommodationPreference) missing.push('accommodation');
+  if (
+    responses.placeValidationPreference == null &&
+    responses.challenging == null
+  ) {
+    missing.push('validation');
+  }
+  if (!responses.staminaLevel) missing.push('stamina');
+  if (!responses.spendingAllocation) missing.push('spending');
+  return missing;
+}
+
 /** @deprecated 레거시 8문항용 — rooms 매칭은 travelType.tags 사용 */
 export function calculateTravelType(answers: Record<string, string>): TravelType {
   let aCount = 0;
@@ -386,25 +409,55 @@ export function calculateMatchResult(
       adjustmentAreas: [],
       avoidAreas: [],
       summary: '동행자 정보가 부족합니다.',
+      memberCount: valid.length,
+      pairCount: 0,
     };
   }
 
-  const [a, b] = valid;
-  const setA = new Set(a.tags);
-  const setB = new Set(b.tags);
-  const matching = [...setA].filter((t) => setB.has(t));
-  const allTags = new Set([...setA, ...setB]);
-  const score = Math.round((matching.length / allTags.size) * 100) || 50;
+  const pairScores: number[] = [];
+  const matchingTagCounts = new Map<string, number>();
+
+  for (let i = 0; i < valid.length; i += 1) {
+    for (let j = i + 1; j < valid.length; j += 1) {
+      const setA = new Set(valid[i].tags);
+      const setB = new Set(valid[j].tags);
+      const matching = [...setA].filter((t) => setB.has(t));
+      const allTags = new Set([...setA, ...setB]);
+      const score =
+        allTags.size === 0
+          ? 50
+          : Math.round((matching.length / allTags.size) * 100);
+      pairScores.push(score);
+      for (const tag of matching) {
+        matchingTagCounts.set(tag, (matchingTagCounts.get(tag) ?? 0) + 1);
+      }
+    }
+  }
+
+  const compatibilityScore = Math.round(
+    pairScores.reduce((a, b) => a + b, 0) / pairScores.length,
+  );
+  const matchingAreas = [...matchingTagCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag]) => tag)
+    .slice(0, 8);
 
   return {
-    compatibilityScore: score,
-    matchingAreas: matching,
+    compatibilityScore,
+    matchingAreas,
     adjustmentAreas: ['일정 밀도', '명소 vs 로컬'],
-    avoidAreas: score < 60 ? ['과도한 이동', '액티비티 중심 일정'] : [],
+    avoidAreas:
+      compatibilityScore < 60 ? ['과도한 이동', '액티비티 중심 일정'] : [],
     summary:
-      score >= 70
-        ? '두 분은 장소 취향이 잘 맞지만, 여행 속도에서 차이가 있을 수 있어요.'
-        : '취향 차이가 있어 조율이 필요해요.',
+      valid.length === 2
+        ? compatibilityScore >= 70
+          ? '두 분은 장소 취향이 잘 맞지만, 여행 속도에서 차이가 있을 수 있어요.'
+          : '취향 차이가 있어 조율이 필요해요.'
+        : compatibilityScore >= 70
+          ? `${valid.length}명의 취향이 대체로 잘 맞아요. 공통 관심사를 중심으로 일정을 잡아보세요.`
+          : `${valid.length}명 사이에 취향 차이가 있어요. 공통 태그와 절충 구간을 먼저 잡으면 좋아요.`,
+    memberCount: valid.length,
+    pairCount: pairScores.length,
   };
 }
 

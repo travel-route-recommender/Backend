@@ -102,8 +102,9 @@ export class AuthService {
     });
     await room.save();
 
+    const tokens = await this.issueTokens(user._id.toString());
     return {
-      ...this.issueTokens(user._id.toString()),
+      ...tokens,
       roomId: room._id.toString(),
     };
   }

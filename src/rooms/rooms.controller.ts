@@ -169,7 +169,7 @@ export class RoomsController {
   }
 
   @Get(':roomId/compatibility')
-  @ApiOperation({ summary: '멤버 궁합 점수 (2인 tag intersection)' })
+  @ApiOperation({ summary: '멤버 궁합 점수 (N명 pairwise tag 평균)' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: MatchResultDto })
   getCompatibility(

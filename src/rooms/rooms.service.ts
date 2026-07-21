@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -32,6 +33,11 @@ import {
   calculateMatchResult,
 } from '../quiz/quiz.data';
 import { TourService } from '../tour/tour.service';
+import {
+  assertTimeRange,
+  assertValidDay,
+  tripDayCount,
+} from './schedule.validation';
 
 const generateInviteCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
 
@@ -85,17 +91,28 @@ export class RoomsService {
 
   private toOngoingTrip(room: TravelRoomDocument) {
     const progress = this.computeProgress(room);
+    const memberCount = room.members.length;
+    const durationDays = tripDayCount(room.startDate, room.endDate);
+    const destinationName = room.destination?.name;
+
     return {
       id: room._id.toString(),
       title: room.title,
-      destination: room.destination?.name ?? '미정',
+      destination: destinationName ?? '미정',
       status: room.status,
       progressLabel: progress.label,
-      lastUpdated: (room as unknown as { updatedAt: Date }).updatedAt?.toISOString?.() ?? '',
-      summary: room.destination
-        ? `${room.destination.name} 여행 계획`
+      lastUpdated:
+        (room as unknown as { updatedAt: Date }).updatedAt?.toISOString?.() ??
+        '',
+      summary: destinationName
+        ? `${destinationName} 여행 계획`
         : '여행 계획을 시작해보세요',
       currentStep: progress.currentStep,
+      startDate: room.startDate?.toISOString?.() ?? null,
+      endDate: room.endDate?.toISOString?.() ?? null,
+      memberCount,
+      durationDays,
+      candidateCount: room.candidatePlaces.length,
     };
   }
 
@@ -217,6 +234,60 @@ export class RoomsService {
     room.progress = this.computeProgress(room);
     await room.save();
     return this.formatRoom(room);
+  }
+
+  /** 초대 링크 미리보기 (비인증, 읽기 전용) */
+  async getInvitePreview(code: string) {
+    const room = await this.roomModel.findOne({ inviteCode: code });
+    if (!room) throw new NotFoundException('Invalid invite code');
+
+    const ownerMember = room.members.find((m) => m.role === 'owner');
+    const owner = ownerMember
+      ? await this.userModel.findById(ownerMember.userId)
+      : null;
+    const durationDays = tripDayCount(room.startDate, room.endDate);
+
+    return {
+      inviteCode: room.inviteCode,
+      title: room.title,
+      destination: room.destination?.name ?? null,
+      startDate: room.startDate?.toISOString?.() ?? null,
+      endDate: room.endDate?.toISOString?.() ?? null,
+      durationDays,
+      memberCount: room.members.length,
+      ownerNickname: owner?.nickname ?? null,
+      status: room.status,
+      previewText: this.buildInvitePreviewText(room, owner?.nickname),
+    };
+  }
+
+  private buildInvitePreviewText(
+    room: TravelRoomDocument,
+    ownerNickname?: string | null,
+  ) {
+    const dest = room.destination?.name ?? '여행';
+    const days = tripDayCount(room.startDate, room.endDate);
+    const period =
+      room.startDate && room.endDate
+        ? `${this.formatKoDate(room.startDate)} ~ ${this.formatKoDate(room.endDate)}`
+        : '일정 미정';
+    const stay = days ? `${days - 1}박 ${days}일` : '';
+    const headline = stay
+      ? `${dest} ${stay} 여행에 초대받았어요`
+      : `${dest} 여행에 초대받았어요`;
+
+    return {
+      headline,
+      destination: dest,
+      period,
+      memberCount: room.members.length,
+      ownerNickname: ownerNickname ?? '방장',
+    };
+  }
+
+  private formatKoDate(date: Date) {
+    const d = new Date(date);
+    return `${d.getMonth() + 1}월 ${d.getDate()}일`;
   }
 
   async getProgress(roomId: string, userId: string) {
@@ -348,7 +419,10 @@ export class RoomsService {
 
   async getSchedule(roomId: string, userId: string) {
     const room = await this.getRoomForMember(roomId, userId);
-    return room.schedule;
+    return {
+      ...room.schedule,
+      scheduleVersion: room.scheduleVersion ?? 0,
+    };
   }
 
   async getScheduleMap(roomId: string, userId: string) {
@@ -356,12 +430,15 @@ export class RoomsService {
     const items = room.schedule.days.flatMap((d) =>
       d.items.map((item) => ({ ...item, day: d.day })),
     );
-    return { items };
+    return { items, scheduleVersion: room.scheduleVersion ?? 0 };
   }
 
   async addScheduleItem(roomId: string, userId: string, dto: ScheduleItemDto) {
     const room = await this.getRoomForMember(roomId, userId);
+    assertTimeRange(dto.startTime, dto.endTime);
     const day = dto.day ?? 1;
+    assertValidDay(day, room.startDate, room.endDate);
+
     let dayPlan = room.schedule.days.find((d) => d.day === day);
     if (!dayPlan) {
       dayPlan = { day, items: [] };
@@ -387,6 +464,7 @@ export class RoomsService {
       this.syncCandidateScheduledFlags(room);
     }
 
+    room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
     room.progress = this.computeProgress(room);
     await room.save();
     return item;
@@ -397,13 +475,32 @@ export class RoomsService {
     const dayPlan = room.schedule.days.find((d) => d.day === dto.day);
     if (!dayPlan) throw new NotFoundException('Day not found');
 
-    const map = new Map(dayPlan.items.map((i) => [i.id, i]));
-    dayPlan.items = dto.itemIds
-      .map((id) => map.get(id))
-      .filter(Boolean) as ItineraryItem[];
+    const existingIds = dayPlan.items.map((i) => i.id);
+    const incoming = dto.itemIds;
 
+    if (incoming.length !== existingIds.length) {
+      throw new BadRequestException(
+        `reorder는 해당 day의 모든 item id를 포함해야 합니다. 기대 ${existingIds.length}개, 전달 ${incoming.length}개`,
+      );
+    }
+
+    const existingSet = new Set(existingIds);
+    const incomingSet = new Set(incoming);
+    if (
+      existingSet.size !== incomingSet.size ||
+      [...existingSet].some((id) => !incomingSet.has(id))
+    ) {
+      throw new BadRequestException(
+        'reorder itemIds는 기존 일정 id의 exact permutation이어야 합니다.',
+      );
+    }
+
+    const map = new Map(dayPlan.items.map((i) => [i.id, i]));
+    dayPlan.items = incoming.map((id) => map.get(id)!) as ItineraryItem[];
+
+    room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
     await room.save();
-    return dayPlan;
+    return { ...dayPlan, scheduleVersion: room.scheduleVersion };
   }
 
   async updateScheduleItem(
@@ -416,9 +513,23 @@ export class RoomsService {
     for (const day of room.schedule.days) {
       const item = day.items.find((i) => i.id === itemId);
       if (item) {
-        Object.assign(item, dto);
-        if (dto.day && dto.day !== day.day) {
+        const nextStart = dto.startTime ?? item.startTime;
+        const nextEnd = dto.endTime ?? item.endTime;
+        assertTimeRange(nextStart, nextEnd);
+
+        if (dto.day != null) {
+          assertValidDay(dto.day, room.startDate, room.endDate);
+        }
+
+        if (dto.placeName != null) item.placeName = dto.placeName;
+        if (dto.startTime != null) item.startTime = dto.startTime;
+        if (dto.endTime != null) item.endTime = dto.endTime;
+        if (dto.reason != null) item.reason = dto.reason;
+        if (dto.priority != null) item.priority = dto.priority;
+
+        if (dto.day != null && dto.day !== day.day) {
           day.items = day.items.filter((i) => i.id !== itemId);
+          item.day = dto.day;
           let target = room.schedule.days.find((d) => d.day === dto.day);
           if (!target) {
             target = { day: dto.day, items: [] };
@@ -426,6 +537,8 @@ export class RoomsService {
           }
           target.items.push(item);
         }
+
+        room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
         await room.save();
         return item;
       }
@@ -440,6 +553,7 @@ export class RoomsService {
       day.items = day.items.filter((i) => i.id !== itemId);
       if (day.items.length < before) {
         this.syncCandidateScheduledFlags(room);
+        room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
         await room.save();
         return { success: true };
       }
@@ -449,6 +563,27 @@ export class RoomsService {
 
   async saveSchedule(roomId: string, userId: string, dto: BatchScheduleDto) {
     const room = await this.getRoomForMember(roomId, userId);
+    const currentVersion = room.scheduleVersion ?? 0;
+
+    if (
+      dto.expectedVersion != null &&
+      dto.expectedVersion !== currentVersion
+    ) {
+      throw new ConflictException({
+        message:
+          '일정이 다른 멤버에 의해 먼저 수정되었습니다. 최신 일정을 다시 불러온 뒤 저장하세요.',
+        currentVersion,
+        expectedVersion: dto.expectedVersion,
+      });
+    }
+
+    for (const d of dto.days) {
+      assertValidDay(d.day, room.startDate, room.endDate);
+      for (const item of d.items) {
+        assertTimeRange(item.startTime, item.endTime);
+      }
+    }
+
     room.schedule.days = dto.days.map((d) => ({
       day: d.day,
       items: d.items.map((item) => ({
@@ -466,9 +601,13 @@ export class RoomsService {
       })),
     }));
     this.syncCandidateScheduledFlags(room);
+    room.scheduleVersion = currentVersion + 1;
     room.progress = this.computeProgress(room);
     await room.save();
-    return room.schedule;
+    return {
+      ...room.schedule,
+      scheduleVersion: room.scheduleVersion,
+    };
   }
 
   /** Keep candidate.scheduled in sync with schedule placeIds. */
@@ -569,6 +708,7 @@ export class RoomsService {
         (acc, d) => acc + d.items.length,
         0,
       ),
+      scheduleVersion: room.scheduleVersion ?? 0,
     };
   }
 }

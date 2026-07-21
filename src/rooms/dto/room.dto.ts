@@ -4,12 +4,14 @@ import {
   IsDateString,
   IsEnum,
   IsIn,
+  IsInt,
   IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -137,7 +139,8 @@ export class ReorderScheduleDto {
 
   @ApiProperty({
     example: ['item-3', 'item-1', 'item-2'],
-    description: '해당 day의 item id 순서',
+    description:
+      '해당 day의 모든 item id를 최종 순서대로 전달 (exact permutation 필수)',
   })
   @IsArray()
   @IsString({ each: true })
@@ -159,11 +162,23 @@ export class ScheduleItemDto {
   @IsString()
   placeName: string;
 
-  @ApiProperty({ example: '09:00', description: 'HH:mm 형식' })
+  @ApiProperty({
+    example: '09:00',
+    description: 'HH:mm 형식 (00:00–23:59)',
+  })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'startTime은 HH:mm 형식이어야 합니다',
+  })
   @IsString()
   startTime: string;
 
-  @ApiProperty({ example: '11:00', description: 'HH:mm 형식' })
+  @ApiProperty({
+    example: '11:00',
+    description: 'HH:mm 형식 (00:00–23:59), startTime보다 이후',
+  })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'endTime은 HH:mm 형식이어야 합니다',
+  })
   @IsString()
   endTime: string;
 
@@ -186,9 +201,10 @@ export class ScheduleItemDto {
   @IsEnum(['must', 'optional', 'skip'])
   priority?: 'must' | 'optional' | 'skip';
 
-  @ApiPropertyOptional({ example: 1 })
+  @ApiPropertyOptional({ example: 1, description: '1 이상 정수, 여행 기간 이내' })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   day?: number;
 
   @ApiPropertyOptional({ example: 33.458 })
@@ -210,13 +226,24 @@ export class UpdateScheduleItemDto {
 
   @ApiPropertyOptional({ example: '09:30', description: 'HH:mm 형식' })
   @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'startTime은 HH:mm 형식이어야 합니다',
+  })
   @IsString()
   startTime?: string;
 
   @ApiPropertyOptional({ example: '11:30', description: 'HH:mm 형식' })
   @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'endTime은 HH:mm 형식이어야 합니다',
+  })
   @IsString()
   endTime?: string;
+
+  @ApiPropertyOptional({ example: '일출 보러 가기' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
 
   @ApiPropertyOptional({ enum: ['must', 'optional', 'skip'], example: 'optional' })
   @IsOptional()
@@ -225,7 +252,8 @@ export class UpdateScheduleItemDto {
 
   @ApiPropertyOptional({ example: 2 })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   day?: number;
 }
 
@@ -262,6 +290,16 @@ export class BatchScheduleDto {
   @ValidateNested({ each: true })
   @Type(() => ScheduleDayDto)
   days: ScheduleDayDto[];
+
+  @ApiPropertyOptional({
+    example: 0,
+    description:
+      '동시 수정 보호용. GET schedule의 scheduleVersion과 같아야 저장됩니다.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
 }
 
 export class ReplacePlaceDto {

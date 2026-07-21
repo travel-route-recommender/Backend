@@ -2,11 +2,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api/v1');
+  app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -99,7 +101,7 @@ Tourmate / TripMatch 백엔드 API입니다.
     )
     .addTag('인기 여행지', '인기 Top 여행지 (popularityScore)')
     .addTag('여행방', '방 생성·초대·후보·일정·궁합')
-    .addTag('초대', '초대 코드로 기존 유저 입장')
+    .addTag('초대', '초대 미리보기 · 기존 유저 초대 수락')
     .addTag('두리 도우미', '장소 추천·일정 초안·분석 리포트 (rule-based MVP)')
     .addTag('저장', '개인 장소 저장(Save) 목록')
     .build();
