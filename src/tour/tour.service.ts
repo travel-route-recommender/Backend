@@ -2,10 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Place, PlaceDocument } from '../schemas/place.schema';
+import { AppCacheService } from '../common/cache/app-cache.service';
 import { TourApiClient } from './tour-api.client';
 import {
-  cacheGet,
-  cacheSet,
+  bucketCoord,
   cleanPlaceKeyword,
   CodeItem,
   CongestionDay,
@@ -59,12 +59,13 @@ type PlacePage = Page<PlaceCard>;
 export class TourService {
   constructor(
     private readonly client: TourApiClient,
+    private readonly cache: AppCacheService,
     @InjectModel(Place.name) private readonly placeModel: Model<PlaceDocument>,
   ) {}
 
   async list(query: ListPlacesQueryDto): Promise<PlacePage> {
     const key = `tour:list:${JSON.stringify(query)}`;
-    const cached = cacheGet<PlacePage>(key);
+    const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
     const data = await this.client.call('areaBasedList2', {
@@ -77,13 +78,13 @@ export class TourService {
     });
 
     const page = this.toPage(data);
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
   async search(query: SearchPlacesQueryDto): Promise<PlacePage> {
     const key = `tour:search:${JSON.stringify(query)}`;
-    const cached = cacheGet<PlacePage>(key);
+    const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
     const data = await this.client.call('searchKeyword2', {
@@ -96,13 +97,22 @@ export class TourService {
     });
 
     const page = this.toPage(data);
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
   async nearby(query: NearbyPlacesQueryDto): Promise<PlacePage> {
-    const key = `tour:nearby:${JSON.stringify(query)}`;
-    const cached = cacheGet<PlacePage>(key);
+    // 좌표를 ~100m 단위로 버킷팅해 캐시 히트율 확보 (원본 좌표는 API에 그대로 전달)
+    const cacheQuery = {
+      ...query,
+      mapX: bucketCoord(query.mapX),
+      mapY: bucketCoord(query.mapY),
+      radius: query.radius ?? 2000,
+      size: query.size ?? 20,
+      page: query.page ?? 1,
+    };
+    const key = `tour:nearby:${JSON.stringify(cacheQuery)}`;
+    const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
     const data = await this.client.call('locationBasedList2', {
@@ -116,7 +126,7 @@ export class TourService {
     });
 
     const page = this.toPage(data);
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
@@ -130,7 +140,7 @@ export class TourService {
     contentTypeId?: number,
   ): Promise<PlaceDetail> {
     const key = `tour:place:${contentId}`;
-    const cached = cacheGet<PlaceDetail>(key);
+    const cached = await this.cache.get<PlaceDetail>(key);
     if (cached) return cached;
 
     const common = await this.client.call('detailCommon2', { contentId });
@@ -168,7 +178,7 @@ export class TourService {
     };
 
     detail.placeId = await this.upsertPlace(detail);
-    cacheSet(key, detail, DETAIL_TTL);
+    await this.cache.set(key, detail, DETAIL_TTL);
     return detail;
   }
 
@@ -186,7 +196,7 @@ export class TourService {
     meta: { total: number; page: number; size: number; source: string };
   }> {
     const key = `tour:similar:${contentId}:${size}`;
-    const cached = cacheGet<{
+    const cached = await this.cache.get<{
       data: RelatedPlaceCard[];
       meta: { total: number; page: number; size: number; source: string };
     }>(key);
@@ -200,7 +210,7 @@ export class TourService {
         size,
       );
       if (related.data.length > 0) {
-        cacheSet(key, related, LIST_TTL);
+        await this.cache.set(key, related, LIST_TTL);
         return related;
       }
     } catch {
@@ -212,7 +222,7 @@ export class TourService {
       contentTypeId,
       size,
     );
-    cacheSet(key, fallback, LIST_TTL);
+    await this.cache.set(key, fallback, LIST_TTL);
     return fallback;
   }
 
@@ -315,7 +325,7 @@ export class TourService {
   ): Promise<{ data: HubPlaceCard[]; meta: { total: number; baseYm: string } }> {
     const baseYm = query.baseYm ?? latestBaseYm();
     const key = `tour:hub:${areaCd}:${query.signguCd}:${baseYm}:${query.size ?? 20}`;
-    const cached = cacheGet<{
+    const cached = await this.cache.get<{
       data: HubPlaceCard[];
       meta: { total: number; baseYm: string };
     }>(key);
@@ -337,7 +347,7 @@ export class TourService {
       data: cards,
       meta: { total: cards.length, baseYm },
     };
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
@@ -347,7 +357,7 @@ export class TourService {
     meta: { total: number; page: number; size: number; level: string };
   }> {
     const key = `tour:visitors:${JSON.stringify(query)}`;
-    const cached = cacheGet<{
+    const cached = await this.cache.get<{
       data: VisitorStat[];
       meta: { total: number; page: number; size: number; level: string };
     }>(key);
@@ -372,7 +382,7 @@ export class TourService {
         level: query.level,
       },
     };
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
@@ -391,7 +401,7 @@ export class TourService {
     busyDays: CongestionDay[];
   }> {
     const key = `tour:cnctr:${contentId}:${query.areaCd ?? ''}:${query.signguCd ?? ''}`;
-    const cached = cacheGet<{
+    const cached = await this.cache.get<{
       contentId: string;
       name: string;
       days: CongestionDay[];
@@ -448,7 +458,7 @@ export class TourService {
       peak,
       busyDays,
     };
-    cacheSet(key, result, LIST_TTL);
+    await this.cache.set(key, result, LIST_TTL);
     return result;
   }
 
@@ -474,7 +484,7 @@ export class TourService {
       new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const cacheParams = { ...query, eventStartDate };
     const key = `tour:festival:${JSON.stringify(cacheParams)}`;
-    const cached = cacheGet<Page<FestivalCard>>(key);
+    const cached = await this.cache.get<Page<FestivalCard>>(key);
     if (cached) return cached;
 
     const data = await this.client.call('searchFestival2', {
@@ -491,14 +501,14 @@ export class TourService {
       data: extractItems(data).map(toFestivalCard),
       meta: extractBodyMeta(data),
     };
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
   /** 숙박 (searchStay2, contentTypeId 32 고정). */
   async stays(query: StayQueryDto): Promise<PlacePage> {
     const key = `tour:stay:${JSON.stringify(query)}`;
-    const cached = cacheGet<PlacePage>(key);
+    const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
     const data = await this.client.call('searchStay2', {
@@ -510,7 +520,7 @@ export class TourService {
     });
 
     const page = this.toPage(data);
-    cacheSet(key, page, LIST_TTL);
+    await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
@@ -535,19 +545,19 @@ export class TourService {
   /** 반려동물 동반 정보 (detailPetTour2). 미등록이면 null. */
   async petInfo(contentId: string): Promise<PetTourInfo | null> {
     const key = `tour:pet:${contentId}`;
-    const cached = cacheGet<PetTourInfo | null>(key);
+    const cached = await this.cache.get<PetTourInfo | null>(key);
     if (cached !== undefined) return cached;
 
     const data = await this.client.call('detailPetTour2', { contentId });
     const info = toPetTourInfo(extractItems(data)[0]);
-    cacheSet(key, info, DETAIL_TTL);
+    await this.cache.set(key, info, DETAIL_TTL);
     return info;
   }
 
   /** 법정동 코드 (ldongCode2). 시도/시군구 필터용. */
   async ldongCodes(query: LdongCodeQueryDto): Promise<CodeItem[]> {
     const key = `tour:ldong:${JSON.stringify(query)}`;
-    const cached = cacheGet<CodeItem[]>(key);
+    const cached = await this.cache.get<CodeItem[]>(key);
     if (cached) return cached;
 
     const data = await this.client.call('ldongCode2', {
@@ -558,14 +568,14 @@ export class TourService {
     });
 
     const codes = extractItems(data).map(toCodeItem);
-    cacheSet(key, codes, META_TTL);
+    await this.cache.set(key, codes, META_TTL);
     return codes;
   }
 
   /** 분류체계 코드 (lclsSystmCode2). 카테고리 필터용. */
   async categoryCodes(query: CategoryCodeQueryDto): Promise<CodeItem[]> {
     const key = `tour:lcls:${JSON.stringify(query)}`;
-    const cached = cacheGet<CodeItem[]>(key);
+    const cached = await this.cache.get<CodeItem[]>(key);
     if (cached) return cached;
 
     const data = await this.client.call('lclsSystmCode2', {
@@ -576,7 +586,7 @@ export class TourService {
     });
 
     const codes = extractItems(data).map(toCodeItem);
-    cacheSet(key, codes, META_TTL);
+    await this.cache.set(key, codes, META_TTL);
     return codes;
   }
 

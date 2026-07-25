@@ -31,7 +31,7 @@ FigJam 아키텍처 기준으로 **기능 확정이 필요한 항목**입니다.
 |---|------|------|------|
 | 3.1 | Save vs 후보 담기 UI 동시 가능? | 탐색 | _API 분리됨 (user_saves / room candidates)_ |
 | 3.2 | "저장만" 후 UX 분기 | 탐색 | _미정 (프론트)_ |
-| 3.3 | 장소 데이터: Kakao 단독 vs 자체 DB 시드 | 탐색 | _Kakao + local cache + seed_ |
+| 3.3 | 장소 데이터: Kakao 단독 vs 자체 DB 시드 | 탐색 | _Kakao + local cache + seed. Tour/Kakao 응답은 AppCache(L1 메모리 + Redis)로 TTL 캐시. nearby는 좌표 0.001° 버킷. Kakao search는 bulkWrite upsert + 5분 캐시. `REDIS_URL` 없으면 메모리만._ |
 
 ---
 

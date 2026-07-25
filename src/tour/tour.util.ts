@@ -294,20 +294,8 @@ export function toCongestionDay(raw: Record<string, string>): CongestionDay {
   };
 }
 
-/** Minimal in-memory TTL cache. Swap for Redis later without touching callers. */
-type CacheEntry = { value: unknown; expiresAt: number };
-const store = new Map<string, CacheEntry>();
-
-export function cacheGet<T>(key: string): T | undefined {
-  const hit = store.get(key);
-  if (!hit) return undefined;
-  if (Date.now() > hit.expiresAt) {
-    store.delete(key);
-    return undefined;
-  }
-  return hit.value as T;
-}
-
-export function cacheSet(key: string, value: unknown, ttlMs: number): void {
-  store.set(key, { value, expiresAt: Date.now() + ttlMs });
+/** nearby 등 좌표 캐시 키용. decimals=3 ≈ 100m 단위 */
+export function bucketCoord(value: number, decimals = 3): number {
+  const f = 10 ** decimals;
+  return Math.round(value * f) / f;
 }

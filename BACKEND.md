@@ -26,7 +26,7 @@
 
 TripMatch / Tourmate **메인 REST API 서버**
 
-- **Stack:** NestJS 11 · MongoDB (Mongoose) · JWT (access + refresh)
+- **Stack:** NestJS 11 · MongoDB (Mongoose) · JWT (access + refresh) · 캐시: 메모리 + Redis(`REDIS_URL`, optional)
 - **역할:** 계정/인증, 두리 테스트, 여행방, 후보·일정, 장소 검색, rule-based 매칭·제안
 
 ### 메인 백엔드 — MongoDB에 저장돼야 할 것

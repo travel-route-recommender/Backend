@@ -3,13 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Model } from 'mongoose';
+import { AppCacheService } from '../common/cache/app-cache.service';
 import { Place, PlaceDocument } from '../schemas/place.schema';
+
+const KAKAO_SEARCH_TTL = 5 * 60 * 1000; // 5m
 
 @Injectable()
 export class PlacesService {
   constructor(
     @InjectModel(Place.name) private placeModel: Model<PlaceDocument>,
     private config: ConfigService,
+    private readonly cache: AppCacheService,
   ) {}
 
   async search(query: {
@@ -25,6 +29,20 @@ export class PlacesService {
     const kakaoKey = this.config.get<string>('KAKAO_REST_API_KEY');
 
     if (query.q && kakaoKey) {
+      const cacheKey = `places:kakao:${JSON.stringify({
+        q: query.q,
+        page,
+        limit,
+        lat: query.lat != null ? AppCacheService.bucketCoord(query.lat) : null,
+        lng: query.lng != null ? AppCacheService.bucketCoord(query.lng) : null,
+      })}`;
+
+      const cached = await this.cache.get<{
+        data: PlaceDocument[];
+        meta: { total: number; page: number; limit: number };
+      }>(cacheKey);
+      if (cached) return cached;
+
       try {
         const { data } = await axios.get(
           'https://dapi.kakao.com/v2/local/search/keyword.json',
@@ -40,17 +58,18 @@ export class PlacesService {
           },
         );
 
-        const documents = data.documents ?? [];
-        const places = await Promise.all(
-          documents.map((doc: Record<string, string>) =>
-            this.upsertKakaoPlace(doc),
-          ),
-        );
-
-        return {
+        const documents = (data.documents ?? []) as Record<string, string>[];
+        const places = await this.bulkUpsertKakaoPlaces(documents);
+        const result = {
           data: places,
-          meta: { total: data.meta?.total_count ?? places.length, page, limit },
+          meta: {
+            total: data.meta?.total_count ?? places.length,
+            page,
+            limit,
+          },
         };
+        await this.cache.set(cacheKey, result, KAKAO_SEARCH_TTL);
+        return result;
       } catch {
         // fall through to local search
       }
@@ -155,31 +174,44 @@ export class PlacesService {
     ]);
   }
 
-  private async upsertKakaoPlace(doc: Record<string, string>) {
-    const externalId = doc.id;
-    const existing = await this.placeModel.findOne({
-      externalId,
-      source: 'kakao',
+  /** Kakao 검색 결과 N건을 한 번에 upsert */
+  private async bulkUpsertKakaoPlaces(documents: Record<string, string>[]) {
+    if (documents.length === 0) return [];
+
+    const ops = documents.map((doc) => {
+      const externalId = doc.id;
+      const payload = {
+        externalId,
+        source: 'kakao' as const,
+        name: doc.place_name,
+        address: doc.address_name ?? doc.road_address_name ?? '',
+        lat: parseFloat(doc.y),
+        lng: parseFloat(doc.x),
+        category: doc.category_name,
+        phone: doc.phone,
+        placeUrl: doc.place_url,
+        tags: doc.category_name?.split(' > ') ?? [],
+      };
+      return {
+        updateOne: {
+          filter: { externalId, source: 'kakao' as const },
+          update: { $set: payload },
+          upsert: true,
+        },
+      };
     });
 
-    const payload = {
-      externalId,
-      source: 'kakao' as const,
-      name: doc.place_name,
-      address: doc.address_name ?? doc.road_address_name ?? '',
-      lat: parseFloat(doc.y),
-      lng: parseFloat(doc.x),
-      category: doc.category_name,
-      phone: doc.phone,
-      placeUrl: doc.place_url,
-      tags: doc.category_name?.split(' > ') ?? [],
-    };
+    await this.placeModel.bulkWrite(ops, { ordered: false });
 
-    if (existing) {
-      Object.assign(existing, payload);
-      return existing.save();
-    }
+    const ids = documents.map((d) => d.id);
+    const places = await this.placeModel.find({
+      source: 'kakao',
+      externalId: { $in: ids },
+    });
 
-    return this.placeModel.create(payload);
+    const byExternal = new Map(
+      places.map((p) => [String(p.externalId), p] as const),
+    );
+    return ids.map((id) => byExternal.get(id)).filter(Boolean);
   }
 }
