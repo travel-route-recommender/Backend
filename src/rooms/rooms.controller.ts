@@ -20,10 +20,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { ScopesGuard } from '../common/guards/scopes.guard';
 import {
   AuthUser,
   CurrentUser,
 } from '../common/decorators/current-user.decorator';
+import { RequireScopes } from '../common/decorators/require-scopes.decorator';
 import { RoomsService } from './rooms.service';
 import {
   AddCandidateDto,
@@ -60,12 +62,13 @@ const ROOM_ID = { name: 'roomId', example: '665abc123def456789012345' };
 
 @ApiTags('여행방')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ScopesGuard)
 @Controller('rooms')
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Post()
+  @RequireScopes('room:create')
   @ApiOperation({ summary: '여행방 생성' })
   @ApiCreatedResponse({ type: RoomDto })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateRoomDto) {
@@ -73,6 +76,7 @@ export class RoomsController {
   }
 
   @Post('from-compatibility')
+  @RequireScopes('room:create')
   @ApiOperation({ summary: '궁합 멤버 목록으로 여행방 생성' })
   @ApiCreatedResponse({ type: RoomDto })
   createFromCompatibility(
@@ -110,6 +114,7 @@ export class RoomsController {
   }
 
   @Patch(':roomId')
+  @RequireScopes('room:admin')
   @ApiOperation({ summary: '여행방 수정 (title, dates, status)' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: RoomDto })
@@ -122,6 +127,7 @@ export class RoomsController {
   }
 
   @Patch(':roomId/destination')
+  @RequireScopes('room:admin')
   @ApiOperation({ summary: '여행지 설정' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: RoomDto })
@@ -145,11 +151,15 @@ export class RoomsController {
   @ApiOperation({ summary: '초대 링크 조회' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: InviteLinkDto })
-  getInviteLink(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
+  getInviteLink(
+    @CurrentUser() user: AuthUser,
+    @Param('roomId') roomId: string,
+  ) {
     return this.roomsService.getInviteLink(roomId, user.userId);
   }
 
   @Post(':roomId/invites')
+  @RequireScopes('room:admin')
   @ApiOperation({ summary: '초대코드 재발급 (owner만)' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: InviteLinkDto })
@@ -183,7 +193,10 @@ export class RoomsController {
   @ApiOperation({ summary: '궁합 결과 (compatibility와 동일)' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: MatchResultDto })
-  getMatchResult(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
+  getMatchResult(
+    @CurrentUser() user: AuthUser,
+    @Param('roomId') roomId: string,
+  ) {
     return this.roomsService.getMatchResult(roomId, user.userId);
   }
 
@@ -207,6 +220,7 @@ export class RoomsController {
   }
 
   @Patch(':roomId/schedule-style')
+  @RequireScopes('room:admin')
   @ApiOperation({ summary: 'J/P 일정 스타일 설정' })
   @ApiParam(ROOM_ID)
   setScheduleStyle(
@@ -218,6 +232,7 @@ export class RoomsController {
   }
 
   @Patch(':roomId/courses/selected')
+  @RequireScopes('room:admin')
   @ApiOperation({ summary: '코스 선택 저장' })
   @ApiParam(ROOM_ID)
   selectCourse(
@@ -272,6 +287,7 @@ export class RoomsController {
   }
 
   @Post(':roomId/candidates')
+  @RequireScopes('candidate:write')
   @ApiOperation({
     summary: '후보 장소 추가',
     description:
@@ -291,6 +307,7 @@ export class RoomsController {
   }
 
   @Delete(':roomId/candidates/:placeId')
+  @RequireScopes('candidate:write')
   @ApiOperation({ summary: '본인 후보 삭제' })
   @ApiParam(ROOM_ID)
   @ApiParam({ name: 'placeId', example: '665abc123def456789012345' })
@@ -334,6 +351,7 @@ export class RoomsController {
   }
 
   @Post(':roomId/schedule/items')
+  @RequireScopes('schedule:write')
   @ApiOperation({ summary: '일정 항목 추가' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: ItineraryItemDto })
@@ -346,6 +364,7 @@ export class RoomsController {
   }
 
   @Patch(':roomId/schedule/reorder')
+  @RequireScopes('schedule:write')
   @ApiOperation({ summary: '일정 순서 변경 (drag-drop)' })
   @ApiParam(ROOM_ID)
   reorderSchedule(
@@ -357,6 +376,7 @@ export class RoomsController {
   }
 
   @Patch(':roomId/schedule/items/:itemId')
+  @RequireScopes('schedule:write')
   @ApiOperation({ summary: '일정 항목 수정' })
   @ApiParam(ROOM_ID)
   @ApiParam({ name: 'itemId', example: 'item-1' })
@@ -376,6 +396,7 @@ export class RoomsController {
   }
 
   @Delete(':roomId/schedule/items/:itemId')
+  @RequireScopes('schedule:write')
   @ApiOperation({ summary: '일정 항목 삭제' })
   @ApiParam(ROOM_ID)
   @ApiParam({ name: 'itemId', example: 'item-1' })
@@ -389,6 +410,7 @@ export class RoomsController {
   }
 
   @Put(':roomId/schedule')
+  @RequireScopes('schedule:write')
   @ApiOperation({ summary: '일정 batch 저장' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: RoomScheduleDto })
@@ -400,4 +422,3 @@ export class RoomsController {
     return this.roomsService.saveSchedule(roomId, user.userId, dto);
   }
 }
-

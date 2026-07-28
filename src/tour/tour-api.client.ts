@@ -73,10 +73,21 @@ export class TourApiClient {
     const baseURL = this.baseUrl(kind);
     const label = `${kind}/${operation}`;
     try {
+      const commonParams = this.commonParams;
+      if (!commonParams.serviceKey?.trim()) {
+        throw new HttpException(
+          {
+            code: 'TOUR_API_KEY_MISSING',
+            message: 'TOUR_API_SERVICE_KEY is not configured.',
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+
       const res = await this.http.get(`/${operation}`, {
         baseURL,
         params: {
-          ...this.commonParams,
+          ...commonParams,
           numOfRows: 20,
           pageNo: 1,
           ...clean(params),

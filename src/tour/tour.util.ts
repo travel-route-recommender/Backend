@@ -19,6 +19,8 @@ export type PlaceCard = {
   contentTypeLabel: string | null;
   name: string;
   address: string | null;
+  areaCode: string | null;
+  sigunguCode: string | null;
   thumbnailUrl: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -97,6 +99,8 @@ export function toPlaceCard(raw: Record<string, string>): PlaceCard {
     contentTypeLabel: CONTENT_TYPE_LABELS[contentTypeId] ?? null,
     name: raw.title ?? '',
     address: [raw.addr1, raw.addr2].filter(Boolean).join(' ') || null,
+    areaCode: raw.areacode || null,
+    sigunguCode: raw.sigungucode || null,
     thumbnailUrl: raw.firstimage2 || raw.firstimage || null,
     latitude: raw.mapy ? Number(raw.mapy) : null,
     longitude: raw.mapx ? Number(raw.mapx) : null,
