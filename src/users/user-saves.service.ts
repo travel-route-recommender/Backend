@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { UserSave, UserSaveDocument } from '../schemas/user-save.schema';
 import { Place, PlaceDocument } from '../schemas/place.schema';
 
@@ -51,5 +51,15 @@ export class UserSavesService {
       savedAt: (s as unknown as { savedAt: Date }).savedAt,
       place: s.placeId,
     }));
+  }
+
+  async deleteAllForUser(
+    userId: string,
+    session?: ClientSession,
+  ): Promise<void> {
+    await this.saveModel.deleteMany(
+      { userId: new Types.ObjectId(userId) },
+      { session },
+    );
   }
 }

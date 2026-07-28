@@ -42,6 +42,20 @@ export class TourPlaceCardDto {
   address: string | null;
 
   @ApiProperty({
+    example: '39',
+    nullable: true,
+    description: 'KorService2 areaCode',
+  })
+  areaCode: string | null;
+
+  @ApiProperty({
+    example: '3',
+    nullable: true,
+    description: 'KorService2 sigunguCode',
+  })
+  sigunguCode: string | null;
+
+  @ApiProperty({
     example: 'http://tong.visitkorea.or.kr/cms/resource/82/2944282_image3_1.bmp',
     nullable: true,
   })
@@ -103,20 +117,6 @@ export class TourPlaceDetailDto extends TourPlaceCardDto {
 
   @ApiProperty({ example: '064-123-4567', nullable: true })
   tel: string | null;
-
-  @ApiProperty({
-    example: '39',
-    nullable: true,
-    description: 'KorService2 areacode (특화 API areaCd 매핑용)',
-  })
-  areaCode: string | null;
-
-  @ApiProperty({
-    example: '3',
-    nullable: true,
-    description: 'KorService2 sigungucode',
-  })
-  sigunguCode: string | null;
 
   @ApiProperty({ type: [TourPlaceImageDto] })
   images: TourPlaceImageDto[];

@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { customAlphabet } from 'nanoid';
+import { randomInt } from 'node:crypto';
 import {
   TravelRoom,
   TravelRoomDocument,
@@ -39,7 +39,11 @@ import {
   tripDayCount,
 } from './schedule.validation';
 
-const generateInviteCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
+const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateInviteCode() {
+  return Array.from({ length: 8 }, () => INVITE_CODE_ALPHABET[randomInt(INVITE_CODE_ALPHABET.length)]).join('');
+}
 
 @Injectable()
 export class RoomsService {
@@ -66,6 +70,16 @@ export class RoomsService {
     if (!isMember) throw new ForbiddenException('Not a room member');
 
     return room;
+  }
+
+  private assertRoomOwner(room: TravelRoomDocument, userId: string) {
+    const isOwner = room.members.some(
+      (member) =>
+        member.role === 'owner' && member.userId.toString() === userId,
+    );
+    if (!isOwner) {
+      throw new ForbiddenException('Only owner can update room settings');
+    }
   }
 
   private computeProgress(room: TravelRoomDocument) {
@@ -182,6 +196,7 @@ export class RoomsService {
 
   async updateRoom(roomId: string, userId: string, dto: UpdateRoomDto) {
     const room = await this.getRoomForMember(roomId, userId);
+    this.assertRoomOwner(room, userId);
     if (dto.title) room.title = dto.title;
     if (dto.startDate) room.startDate = new Date(dto.startDate);
     if (dto.endDate) room.endDate = new Date(dto.endDate);
@@ -193,6 +208,7 @@ export class RoomsService {
 
   async updateDestination(roomId: string, userId: string, dto: UpdateDestinationDto) {
     const room = await this.getRoomForMember(roomId, userId);
+    this.assertRoomOwner(room, userId);
     room.destination = dto;
     room.progress = this.computeProgress(room);
     await room.save();
@@ -670,6 +686,7 @@ export class RoomsService {
 
   async setScheduleStyle(roomId: string, userId: string, style: 'jType' | 'pType') {
     const room = await this.getRoomForMember(roomId, userId);
+    this.assertRoomOwner(room, userId);
     room.scheduleStyle = style;
     await room.save();
     return { scheduleStyle: room.scheduleStyle };
@@ -677,6 +694,7 @@ export class RoomsService {
 
   async selectCourse(roomId: string, userId: string, courseId: string) {
     const room = await this.getRoomForMember(roomId, userId);
+    this.assertRoomOwner(room, userId);
     room.selectedCourseId = courseId;
     await room.save();
     return { selectedCourseId: courseId };

@@ -78,6 +78,27 @@ export class User {
   @Prop({ default: false })
   isGuest: boolean;
 
+  @Prop({ enum: ['member', 'guest'], default: 'member', index: true })
+  accountType: 'member' | 'guest';
+
+  @Prop({
+    enum: ['active', 'locked', 'suspended', 'deleted'],
+    default: 'active',
+  })
+  status: 'active' | 'locked' | 'suspended' | 'deleted';
+
+  @Prop({ default: 1 })
+  securityVersion: number;
+
+  @Prop()
+  guestInstallationHash?: string;
+
+  @Prop()
+  guestExpiresAt?: Date;
+
+  @Prop({ type: Object, default: {} })
+  quizAnswers: Record<string, string>;
+
   @Prop({ type: [String], default: [] })
   refreshTokens: string[];
 }
@@ -85,3 +106,4 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 UserSchema.index({ oauthProvider: 1, oauthId: 1 }, { sparse: true });
+UserSchema.index({ guestInstallationHash: 1 }, { unique: true, sparse: true });
