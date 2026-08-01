@@ -29,6 +29,12 @@ export class PlacesController {
   @ApiQuery({ name: 'category', required: false, example: '관광' })
   @ApiQuery({ name: 'lat', required: false, example: '33.4996' })
   @ApiQuery({ name: 'lng', required: false, example: '126.5312' })
+  @ApiQuery({
+    name: 'sort',
+    required: false,
+    enum: ['popular'],
+    description: '인기순. 검색/상세방문/저장/후보추가 가중치 기반',
+  })
   @ApiQuery({ name: 'page', required: false, example: '1' })
   @ApiQuery({ name: 'limit', required: false, example: '20' })
   @ApiOkResponse({ type: PlaceSearchPageDto })
@@ -37,6 +43,7 @@ export class PlacesController {
     @Query('category') category?: string,
     @Query('lat') lat?: string,
     @Query('lng') lng?: string,
+    @Query('sort') sort?: 'popular',
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -47,6 +54,7 @@ export class PlacesController {
       lng: lng ? parseFloat(lng) : undefined,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 20,
+      sort,
     });
   }
 

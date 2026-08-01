@@ -15,6 +15,12 @@ const REQUIRED_PRODUCTION_VALUES = [
   'KAKAO_OIDC_MOBILE_REDIRECT_URIS',
 ] as const;
 
+const UNSAFE_SECRET_VALUES = new Set([
+  'change-me-access-secret',
+  'change-me-refresh-secret',
+  'tourmate-development-only-secret-not-for-production',
+]);
+
 function hasValue(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -24,6 +30,7 @@ export function validateEnvironment(
 ): Record<string, unknown> {
   const config = { ...input };
   const isProduction = config.NODE_ENV === 'production';
+  validateUnsafePlaceholders(config);
 
   if (!isProduction) return config;
 
@@ -98,20 +105,26 @@ export function validateEnvironment(
     );
   }
 
-  const weakValues = ['change-me-access-secret', 'change-me-refresh-secret'];
-  for (const key of ['SECURITY_HASH_KEY', 'JWT_ACCESS_SECRET']) {
-    const value = config[key];
-    if (hasValue(value) && weakValues.includes(value)) {
-      throw new Error(`${key} contains an unsafe placeholder value`);
-    }
-  }
-
   if (String(config.SECURITY_HASH_KEY).length < 32) {
     throw new Error('SECURITY_HASH_KEY must contain at least 32 characters');
   }
   validateKakaoMobileOidc(config);
 
   return config;
+}
+
+function validateUnsafePlaceholders(config: Record<string, unknown>): void {
+  if (config.NODE_ENV === 'test') return;
+  for (const key of [
+    'SECURITY_HASH_KEY',
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+  ]) {
+    const value = config[key];
+    if (hasValue(value) && UNSAFE_SECRET_VALUES.has(value)) {
+      throw new Error(`${key} contains an unsafe placeholder value`);
+    }
+  }
 }
 
 function validateKakaoMobileOidc(config: Record<string, unknown>): void {

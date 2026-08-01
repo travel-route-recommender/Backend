@@ -127,8 +127,9 @@ export class AuthService {
   refresh(
     refreshToken: string,
     operationId: string,
+    context: ClientContext,
   ): Promise<AuthTokenResponse> {
-    return this.sessions.refresh(refreshToken, operationId);
+    return this.sessions.refresh(refreshToken, operationId, context);
   }
 
   async logout(sessionId: string): Promise<{ success: true }> {

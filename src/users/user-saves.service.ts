@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { UserSave, UserSaveDocument } from '../schemas/user-save.schema';
 import { Place, PlaceDocument } from '../schemas/place.schema';
+import { buildPlacePopularityIncrement } from '../places/place-popularity';
 
 @Injectable()
 export class UserSavesService {
@@ -15,19 +16,33 @@ export class UserSavesService {
     const place = await this.placeModel.findById(placeId);
     if (!place) throw new NotFoundException('Place not found');
 
-    return this.saveModel.findOneAndUpdate(
-      {
-        userId: new Types.ObjectId(userId),
-        placeId: new Types.ObjectId(placeId),
-        roomId: roomId ? new Types.ObjectId(roomId) : null,
-      },
-      {
-        userId: new Types.ObjectId(userId),
-        placeId: new Types.ObjectId(placeId),
-        roomId: roomId ? new Types.ObjectId(roomId) : undefined,
-      },
-      { upsert: true, new: true },
+    const filter = {
+      userId: new Types.ObjectId(userId),
+      placeId: new Types.ObjectId(placeId),
+      roomId: roomId ? new Types.ObjectId(roomId) : null,
+    };
+    const save = {
+      userId: new Types.ObjectId(userId),
+      placeId: new Types.ObjectId(placeId),
+      roomId: roomId ? new Types.ObjectId(roomId) : undefined,
+    };
+
+    const result = await this.saveModel.updateOne(
+      filter,
+      { $setOnInsert: save },
+      { upsert: true },
     );
+
+    if (result.upsertedCount > 0) {
+      await this.placeModel.updateOne(
+        { _id: new Types.ObjectId(placeId) },
+        buildPlacePopularityIncrement('saveCount'),
+      );
+    }
+
+    const saved = await this.saveModel.findOne(filter);
+    if (!saved) throw new NotFoundException('Save not found');
+    return saved;
   }
 
   async removeSave(userId: string, placeId: string) {

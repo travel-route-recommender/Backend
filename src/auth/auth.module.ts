@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
@@ -59,6 +60,7 @@ import { TokenService } from './token.service';
     RequestContextService,
     SecurityStoreService,
     TokenService,
+    { provide: APP_GUARD, useClass: PublicRateLimitGuard },
     JwtStrategy,
     ScopesGuard,
     PublicRateLimitGuard,

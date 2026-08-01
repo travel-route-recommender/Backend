@@ -13,6 +13,7 @@ import {
 import { TOUR_CONTENT_TYPE_IDS } from '../tour.util';
 
 const CONTENT_TYPE_VALUES = [...TOUR_CONTENT_TYPE_IDS];
+const TOUR_SORT_VALUES = ['provider', 'popular'] as const;
 
 export class ListPlacesQueryDto {
   @ApiPropertyOptional({ example: '39', description: '지역코드 (areaCode)' })
@@ -36,6 +37,27 @@ export class ListPlacesQueryDto {
   @IsIn(CONTENT_TYPE_VALUES)
   contentTypeId?: number;
 
+  @ApiPropertyOptional({ example: 'NA', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA02',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
+
   @ApiPropertyOptional({
     example: 'O',
     description: 'A:제목 C:수정일 O:이미지+제목 Q:이미지+수정일',
@@ -43,6 +65,15 @@ export class ListPlacesQueryDto {
   @IsOptional()
   @IsString()
   arrange?: string;
+
+  @ApiPropertyOptional({
+    enum: TOUR_SORT_VALUES,
+    example: 'popular',
+    description: 'provider: TourAPI 기본 정렬, popular: DB 통계 기반 인기순',
+  })
+  @IsOptional()
+  @IsIn(TOUR_SORT_VALUES)
+  sort?: (typeof TOUR_SORT_VALUES)[number];
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
@@ -86,6 +117,121 @@ export class SearchPlacesQueryDto {
   @IsIn(CONTENT_TYPE_VALUES)
   contentTypeId?: number;
 
+  @ApiPropertyOptional({ example: 'NA', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA02',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
+
+  @ApiPropertyOptional({
+    enum: TOUR_SORT_VALUES,
+    example: 'popular',
+    description: 'provider: TourAPI 기본 정렬, popular: DB 통계 기반 인기순',
+  })
+  @IsOptional()
+  @IsIn(TOUR_SORT_VALUES)
+  sort?: (typeof TOUR_SORT_VALUES)[number];
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ example: 20, default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  size?: number;
+}
+
+export class RegionSuggestQueryDto {
+  @ApiProperty({ example: '제주', description: '지역 자동완성 키워드' })
+  @IsString()
+  keyword: string;
+
+  @ApiPropertyOptional({ example: 10, default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  size?: number;
+}
+
+export class SearchWithinRegionQueryDto {
+  @ApiPropertyOptional({
+    example: '성산일출봉',
+    description: '지역 내 검색 키워드',
+  })
+  @IsOptional()
+  @IsString()
+  keyword?: string;
+
+  @ApiPropertyOptional({ example: '4', description: '시군구코드' })
+  @IsOptional()
+  @IsString()
+  sigunguCode?: string;
+
+  @ApiPropertyOptional({
+    enum: CONTENT_TYPE_VALUES,
+    example: 12,
+    description:
+      '12관광지 · 14문화 · 15축제 · 25코스 · 28레포츠 · 32숙박 · 38쇼핑 · 39음식',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn(CONTENT_TYPE_VALUES)
+  contentTypeId?: number;
+
+  @ApiPropertyOptional({ example: 'NA', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA02',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
+
+  @ApiPropertyOptional({
+    enum: TOUR_SORT_VALUES,
+    example: 'popular',
+    description: 'provider: TourAPI 기본 정렬, popular: DB 통계 기반 인기순',
+  })
+  @IsOptional()
+  @IsIn(TOUR_SORT_VALUES)
+  sort?: (typeof TOUR_SORT_VALUES)[number];
+
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -113,7 +259,11 @@ export class NearbyPlacesQueryDto {
   @IsNumber()
   mapY: number;
 
-  @ApiPropertyOptional({ example: 2000, default: 2000, description: '반경(m), 최대 20000' })
+  @ApiPropertyOptional({
+    example: 2000,
+    default: 2000,
+    description: '반경(m), 최대 20000',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -126,6 +276,27 @@ export class NearbyPlacesQueryDto {
   @Type(() => Number)
   @IsIn(CONTENT_TYPE_VALUES)
   contentTypeId?: number;
+
+  @ApiPropertyOptional({ example: 'NA', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA02',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
@@ -160,7 +331,10 @@ export class FestivalQueryDto {
   @Matches(/^\d{8}$/, { message: 'eventStartDate must be YYYYMMDD' })
   eventStartDate?: string;
 
-  @ApiPropertyOptional({ example: '20261231', description: '행사 종료일 YYYYMMDD' })
+  @ApiPropertyOptional({
+    example: '20261231',
+    description: '행사 종료일 YYYYMMDD',
+  })
   @IsOptional()
   @Matches(/^\d{8}$/, { message: 'eventEndDate must be YYYYMMDD' })
   eventEndDate?: string;
@@ -174,6 +348,27 @@ export class FestivalQueryDto {
   @IsOptional()
   @IsString()
   sigunguCode?: string;
+
+  @ApiPropertyOptional({ example: 'EV', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'EV01',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'EV010100',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
 
   @ApiPropertyOptional({ example: 'O' })
   @IsOptional()
@@ -206,6 +401,27 @@ export class StayQueryDto {
   @IsOptional()
   @IsString()
   sigunguCode?: string;
+
+  @ApiPropertyOptional({ example: 'AC', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'AC01',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'AC010100',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
 
   @ApiPropertyOptional({ example: 'O' })
   @IsOptional()
@@ -244,6 +460,27 @@ export class SyncQueryDto {
   @Type(() => Number)
   @IsIn(CONTENT_TYPE_VALUES)
   contentTypeId?: number;
+
+  @ApiPropertyOptional({ example: 'NA', description: '신분류체계 대분류 코드' })
+  @IsOptional()
+  @IsString()
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA02',
+    description: '신분류체계 중분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    description: '신분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
 
   @ApiPropertyOptional({
     example: '20260101000000',
@@ -309,6 +546,23 @@ export class CategoryCodeQueryDto {
   @IsOptional()
   @IsString()
   lclsSystm2?: string;
+
+  @ApiPropertyOptional({
+    example: 'AC010100',
+    description: '분류체계 소분류 코드',
+  })
+  @IsOptional()
+  @IsString()
+  lclsSystm3?: string;
+
+  @ApiPropertyOptional({
+    example: 'Y',
+    enum: ['Y', 'N'],
+    description: 'Y면 대/중/소 전체 목록을 한 번에 반환',
+  })
+  @IsOptional()
+  @IsIn(['Y', 'N'])
+  lclsSystmListYn?: 'Y' | 'N';
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()

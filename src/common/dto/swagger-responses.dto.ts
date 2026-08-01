@@ -29,7 +29,10 @@ export class PublicUserDto {
   @ApiProperty({ example: '윤지' })
   nickname: string;
 
-  @ApiPropertyOptional({ example: 'https://example.com/me.jpg', nullable: true })
+  @ApiPropertyOptional({
+    example: 'https://example.com/me.jpg',
+    nullable: true,
+  })
   profileImageUrl?: string | null;
 
   @ApiPropertyOptional({ type: TravelTypeDto, nullable: true })
@@ -84,6 +87,20 @@ export class TripsSummaryDto {
   completed: number;
 }
 
+export class PlacePopularityStatsDto {
+  @ApiProperty({ example: 40 })
+  searchCount: number;
+
+  @ApiProperty({ example: 12 })
+  detailViewCount: number;
+
+  @ApiProperty({ example: 3 })
+  saveCount: number;
+
+  @ApiProperty({ example: 1 })
+  candidateAddCount: number;
+}
+
 /** DB Place 문서 (Kakao/manual/tour) */
 export class PlaceDto {
   @ApiProperty({ example: '665abc123def456789012345' })
@@ -135,6 +152,12 @@ export class PlaceDto {
   @ApiProperty({ example: 100 })
   popularityScore: number;
 
+  @ApiPropertyOptional({ type: PlacePopularityStatsDto })
+  stats?: PlacePopularityStatsDto;
+
+  @ApiPropertyOptional({ example: '2026-08-02T00:00:00.000Z' })
+  popularityUpdatedAt?: Date;
+
   @ApiPropertyOptional({ example: '064-123-4567' })
   phone?: string;
 
@@ -178,6 +201,9 @@ export class PopularDestinationDto {
 
   @ApiProperty({ example: 100 })
   popularityScore: number;
+
+  @ApiPropertyOptional({ type: PlacePopularityStatsDto })
+  stats?: PlacePopularityStatsDto;
 }
 
 export class PlaceSearchPageDto {

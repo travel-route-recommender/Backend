@@ -6,6 +6,7 @@ import { AppCacheService } from '../common/cache/app-cache.service';
 import { TourApiClient } from './tour-api.client';
 import {
   bucketCoord,
+  CategoryCodeTreeItem,
   cleanPlaceKeyword,
   CodeItem,
   CongestionDay,
@@ -18,9 +19,13 @@ import {
   PlaceCard,
   PlaceDetail,
   RelatedPlaceCard,
+  RegionCodeItem,
+  RegionCodeTreeItem,
+  regionSearchTokens,
   SyncPlaceCard,
   toCodeItem,
   toCongestionDay,
+  toCategoryCodeTree,
   toFestivalCard,
   toHubCard,
   toPetTourInfo,
@@ -30,6 +35,8 @@ import {
   toSyncCard,
   toVisitorStat,
   VisitorStat,
+  REGION_AREA_CODES,
+  resolveRegionAreaCode,
 } from './tour.util';
 import {
   CategoryCodeQueryDto,
@@ -44,6 +51,10 @@ import {
   SyncQueryDto,
   VisitorsQueryDto,
 } from './dto/tour-query.dto';
+import {
+  buildPlacePopularityIncrement,
+  DEFAULT_PLACE_POPULARITY_STATS,
+} from '../places/place-popularity';
 
 const LIST_TTL = 10 * 60 * 1000; // 10m
 const DETAIL_TTL = 24 * 60 * 60 * 1000; // 24h
@@ -54,6 +65,19 @@ type Page<T> = {
   meta: { total: number; page: number; size: number };
 };
 type PlacePage = Page<PlaceCard>;
+type StoredTourPlaceQuery = Pick<
+  ListPlacesQueryDto,
+  | 'areaCode'
+  | 'sigunguCode'
+  | 'contentTypeId'
+  | 'lclsSystm1'
+  | 'lclsSystm2'
+  | 'lclsSystm3'
+  | 'page'
+  | 'size'
+> & {
+  keyword?: string;
+};
 
 @Injectable()
 export class TourService {
@@ -64,39 +88,165 @@ export class TourService {
   ) {}
 
   async list(query: ListPlacesQueryDto): Promise<PlacePage> {
+    if (query.sort === 'popular') {
+      return this.findStoredTourPlaces(query);
+    }
+
     const key = `tour:list:${JSON.stringify(query)}`;
     const cached = await this.cache.get<PlacePage>(key);
-    if (cached) return cached;
+    if (cached) {
+      await this.bulkUpsertTourPlaceCards(cached.data);
+      return cached;
+    }
 
     const data = await this.client.call('areaBasedList2', {
       arrange: query.arrange ?? 'O',
       areaCode: query.areaCode,
       sigunguCode: query.sigunguCode,
       contentTypeId: query.contentTypeId,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
       numOfRows: query.size ?? 20,
       pageNo: query.page ?? 1,
     });
 
     const page = this.toPage(data);
+    await this.bulkUpsertTourPlaceCards(page.data);
     await this.cache.set(key, page, LIST_TTL);
     return page;
   }
 
+  async regionCodes(): Promise<CodeItem[]> {
+    return REGION_AREA_CODES.map(({ code, name }) => ({ code, name }));
+  }
+
+  async regionCodeTree(): Promise<RegionCodeTreeItem[]> {
+    const key = 'tour:region-codes:tree';
+    const cached = await this.cache.get<RegionCodeTreeItem[]>(key);
+    if (cached) return cached;
+
+    const areas = await Promise.all(
+      REGION_AREA_CODES.map(async (region): Promise<RegionCodeTreeItem> => {
+        const data = await this.client.call('areaCode2', {
+          areaCode: region.code,
+          numOfRows: 100,
+          pageNo: 1,
+        });
+
+        return {
+          code: region.code,
+          name: region.name,
+          sigungu: extractItems(data).map(toCodeItem),
+        };
+      }),
+    );
+
+    await this.cache.set(key, areas, META_TTL);
+    return areas;
+  }
+
+  async suggestRegions(keyword: string, size = 10): Promise<CodeItem[]> {
+    const q = keyword.trim();
+    if (!q) return [];
+
+    const normalized = q.toLowerCase().replace(/\s+/g, '');
+    const matches = REGION_AREA_CODES.filter((region) =>
+      regionSearchTokens(region).some((token) => token.includes(normalized)),
+    )
+      .slice(0, size)
+      .map(({ code, name }) => ({ code, name }));
+
+    return matches;
+  }
+
+  async listByRegion(
+    region: string,
+    query: ListPlacesQueryDto,
+  ): Promise<PlacePage> {
+    const resolved = resolveRegionAreaCode(region);
+    if (!resolved) {
+      return this.list({ ...query, areaCode: region });
+    }
+
+    return this.list({
+      ...query,
+      areaCode: resolved.code,
+    });
+  }
+
+  async searchWithinRegion(
+    region: string,
+    query: {
+      keyword?: string;
+      sigunguCode?: string;
+      contentTypeId?: number;
+      lclsSystm1?: string;
+      lclsSystm2?: string;
+      lclsSystm3?: string;
+      sort?: 'provider' | 'popular';
+      page?: number;
+      size?: number;
+    },
+  ): Promise<PlacePage> {
+    const resolved = resolveRegionAreaCode(region);
+    const areaCode = resolved?.code ?? region;
+    const keyword = query.keyword?.trim();
+
+    if (keyword) {
+      return this.search({
+        keyword,
+        areaCode,
+        sigunguCode: query.sigunguCode,
+        contentTypeId: query.contentTypeId,
+        lclsSystm1: query.lclsSystm1,
+        lclsSystm2: query.lclsSystm2,
+        lclsSystm3: query.lclsSystm3,
+        sort: query.sort,
+        page: query.page,
+        size: query.size,
+      });
+    }
+
+    return this.list({
+      areaCode,
+      sigunguCode: query.sigunguCode,
+      contentTypeId: query.contentTypeId,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
+      sort: query.sort,
+      page: query.page,
+      size: query.size,
+    });
+  }
+
   async search(query: SearchPlacesQueryDto): Promise<PlacePage> {
+    if (query.sort === 'popular') {
+      return this.findStoredTourPlaces(query);
+    }
+
     const key = `tour:search:${JSON.stringify(query)}`;
     const cached = await this.cache.get<PlacePage>(key);
-    if (cached) return cached;
+    if (cached) {
+      await this.recordTourSearchResults(cached.data);
+      return cached;
+    }
 
     const data = await this.client.call('searchKeyword2', {
       keyword: query.keyword,
       areaCode: query.areaCode,
       sigunguCode: query.sigunguCode,
       contentTypeId: query.contentTypeId,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
       numOfRows: query.size ?? 20,
       pageNo: query.page ?? 1,
     });
 
     const page = this.toPage(data);
+    await this.recordTourSearchResults(page.data);
     await this.cache.set(key, page, LIST_TTL);
     return page;
   }
@@ -120,6 +270,9 @@ export class TourService {
       mapY: query.mapY,
       radius: query.radius ?? 2000,
       contentTypeId: query.contentTypeId,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
       arrange: 'E', // 거리순
       numOfRows: query.size ?? 20,
       pageNo: query.page ?? 1,
@@ -141,7 +294,10 @@ export class TourService {
   ): Promise<PlaceDetail> {
     const key = `tour:place:${contentId}`;
     const cached = await this.cache.get<PlaceDetail>(key);
-    if (cached) return cached;
+    if (cached) {
+      await this.recordDetailView(cached.placeId);
+      return cached;
+    }
 
     const common = await this.client.call('detailCommon2', { contentId });
     const commonItem = extractItems(common)[0] ?? {};
@@ -178,6 +334,7 @@ export class TourService {
     };
 
     detail.placeId = await this.upsertPlace(detail);
+    await this.recordDetailView(detail.placeId);
     await this.cache.set(key, detail, DETAIL_TTL);
     return detail;
   }
@@ -205,10 +362,7 @@ export class TourService {
     const detail = await this.detail(contentId, contentTypeId);
 
     try {
-      const related = await this.relatedByKeyword(
-        detail,
-        size,
-      );
+      const related = await this.relatedByKeyword(detail, size);
       if (related.data.length > 0) {
         await this.cache.set(key, related, LIST_TTL);
         return related;
@@ -322,7 +476,10 @@ export class TourService {
   async regionHighlights(
     areaCd: string,
     query: RegionHighlightsQueryDto,
-  ): Promise<{ data: HubPlaceCard[]; meta: { total: number; baseYm: string } }> {
+  ): Promise<{
+    data: HubPlaceCard[];
+    meta: { total: number; baseYm: string };
+  }> {
     const baseYm = query.baseYm ?? latestBaseYm();
     const key = `tour:hub:${areaCd}:${query.signguCd}:${baseYm}:${query.size ?? 20}`;
     const cached = await this.cache.get<{
@@ -423,16 +580,12 @@ export class TourService {
       };
     }
 
-    const data = await this.client.callService(
-      'cnctr',
-      'tatsCnctrRatedList',
-      {
-        areaCd,
-        signguCd,
-        numOfRows: 100,
-        pageNo: 1,
-      },
-    );
+    const data = await this.client.callService('cnctr', 'tatsCnctrRatedList', {
+      areaCd,
+      signguCd,
+      numOfRows: 100,
+      pageNo: 1,
+    });
 
     const keyword = cleanPlaceKeyword(detail.name);
     const rows = extractItems(data).filter((r) => {
@@ -492,6 +645,9 @@ export class TourService {
       eventEndDate: query.eventEndDate,
       areaCode: query.areaCode,
       sigunguCode: query.sigunguCode,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
       arrange: query.arrange ?? 'O',
       numOfRows: query.size ?? 20,
       pageNo: query.page ?? 1,
@@ -514,6 +670,9 @@ export class TourService {
     const data = await this.client.call('searchStay2', {
       areaCode: query.areaCode,
       sigunguCode: query.sigunguCode,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
       arrange: query.arrange ?? 'O',
       numOfRows: query.size ?? 20,
       pageNo: query.page ?? 1,
@@ -530,14 +689,20 @@ export class TourService {
       areaCode: query.areaCode,
       sigunguCode: query.sigunguCode,
       contentTypeId: query.contentTypeId,
+      lclsSystm1: query.lclsSystm1,
+      lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
       modifiedtime: query.modifiedtime,
       arrange: 'C',
       numOfRows: query.size ?? 100,
       pageNo: query.page ?? 1,
     });
 
+    const places = extractItems(data).map(toSyncCard);
+    await this.bulkUpsertTourPlaceCards(places);
+
     return {
-      data: extractItems(data).map(toSyncCard),
+      data: places,
       meta: extractBodyMeta(data),
     };
   }
@@ -581,6 +746,8 @@ export class TourService {
     const data = await this.client.call('lclsSystmCode2', {
       lclsSystm1: query.lclsSystm1,
       lclsSystm2: query.lclsSystm2,
+      lclsSystm3: query.lclsSystm3,
+      lclsSystmListYn: query.lclsSystmListYn,
       numOfRows: query.size ?? 100,
       pageNo: query.page ?? 1,
     });
@@ -588,6 +755,22 @@ export class TourService {
     const codes = extractItems(data).map(toCodeItem);
     await this.cache.set(key, codes, META_TTL);
     return codes;
+  }
+
+  async categoryCodeTree(): Promise<CategoryCodeTreeItem[]> {
+    const key = 'tour:lcls:tree';
+    const cached = await this.cache.get<CategoryCodeTreeItem[]>(key);
+    if (cached) return cached;
+
+    const data = await this.client.call('lclsSystmCode2', {
+      lclsSystmListYn: 'Y',
+      numOfRows: 1000,
+      pageNo: 1,
+    });
+
+    const tree = toCategoryCodeTree(extractItems(data));
+    await this.cache.set(key, tree, META_TTL);
+    return tree;
   }
 
   /** 부가정보 호출 실패(파라미터 오류 등)는 무시하고 빈 데이터로 처리. */
@@ -630,13 +813,184 @@ export class TourService {
           images: detail.images.map((i) => i.url),
           description: detail.overview ?? '',
           category: detail.contentTypeLabel ?? undefined,
+          areaCode: detail.areaCode ?? undefined,
+          sigunguCode: detail.sigunguCode ?? undefined,
+          lclsSystm1: detail.lclsSystm1 ?? undefined,
+          lclsSystm2: detail.lclsSystm2 ?? undefined,
+          lclsSystm3: detail.lclsSystm3 ?? undefined,
           phone: detail.tel ?? undefined,
           placeUrl: detail.homepage ?? undefined,
+        },
+        $setOnInsert: {
+          stats: { ...DEFAULT_PLACE_POPULARITY_STATS },
+          popularityScore: 0,
         },
       },
       { upsert: true, new: true },
     );
 
     return doc._id.toString();
+  }
+
+  private async recordTourSearchResults(cards: PlaceCard[]) {
+    const placeIds = await this.bulkUpsertTourPlaceCards(cards);
+    await this.recordSearchPlaceIds(placeIds);
+  }
+
+  private async recordSearchPlaceIds(placeIds: string[]) {
+    const ids = [...new Set(placeIds)];
+    if (ids.length === 0) return;
+
+    const now = new Date();
+    await this.placeModel.bulkWrite(
+      ids.map((placeId) => ({
+        updateOne: {
+          filter: { _id: placeId },
+          update: buildPlacePopularityIncrement('searchCount', 1, now),
+        },
+      })),
+      { ordered: false },
+    );
+  }
+
+  private async recordDetailView(placeId: string | null | undefined) {
+    if (!placeId) return;
+
+    await this.placeModel.updateOne(
+      { _id: placeId },
+      buildPlacePopularityIncrement('detailViewCount'),
+    );
+  }
+
+  private async bulkUpsertTourPlaceCards(
+    cards: PlaceCard[],
+  ): Promise<string[]> {
+    const validCards = cards.filter(
+      (card) => card.id && card.id !== 'undefined',
+    );
+    if (validCards.length === 0) return [];
+
+    await this.placeModel.bulkWrite(
+      validCards.map((card) => ({
+        updateOne: {
+          filter: { source: 'tour' as const, externalId: card.id },
+          update: {
+            $set: this.toTourPlaceCardPayload(card),
+            $setOnInsert: {
+              images: card.thumbnailUrl ? [card.thumbnailUrl] : [],
+              description: '',
+              stats: { ...DEFAULT_PLACE_POPULARITY_STATS },
+              popularityScore: 0,
+            },
+          },
+          upsert: true,
+        },
+      })),
+      { ordered: false },
+    );
+
+    const ids = validCards.map((card) => card.id);
+    const places = await this.placeModel
+      .find({ source: 'tour', externalId: { $in: ids } })
+      .select('_id externalId');
+
+    const byExternal = new Map(
+      places.map((place) => [String(place.externalId), place._id.toString()]),
+    );
+    return ids
+      .map((id) => byExternal.get(id))
+      .filter((id): id is string => Boolean(id));
+  }
+
+  private async findStoredTourPlaces(
+    query: StoredTourPlaceQuery,
+  ): Promise<PlacePage> {
+    const page = query.page ?? 1;
+    const size = query.size ?? 20;
+    const filter = this.toStoredTourPlaceFilter(query);
+
+    const [places, total] = await Promise.all([
+      this.placeModel
+        .find(filter)
+        .sort({ popularityScore: -1, _id: 1 })
+        .skip((page - 1) * size)
+        .limit(size),
+      this.placeModel.countDocuments(filter),
+    ]);
+
+    if (query.keyword?.trim()) {
+      await this.recordSearchPlaceIds(
+        places.map((place) => place._id.toString()),
+      );
+    }
+
+    return {
+      data: places.map((place) => this.toStoredTourPlaceCard(place)),
+      meta: { total, page, size },
+    };
+  }
+
+  private toStoredTourPlaceFilter(query: StoredTourPlaceQuery) {
+    const filter: Record<string, unknown> = { source: 'tour' };
+
+    if (query.keyword?.trim()) {
+      filter.$text = { $search: query.keyword.trim() };
+    }
+    if (query.areaCode) filter.areaCode = query.areaCode;
+    if (query.sigunguCode) filter.sigunguCode = query.sigunguCode;
+    if (query.contentTypeId) filter.contentTypeId = query.contentTypeId;
+    if (query.lclsSystm1) filter.lclsSystm1 = query.lclsSystm1;
+    if (query.lclsSystm2) filter.lclsSystm2 = query.lclsSystm2;
+    if (query.lclsSystm3) filter.lclsSystm3 = query.lclsSystm3;
+
+    return filter;
+  }
+
+  private toStoredTourPlaceCard(place: PlaceDocument): PlaceCard {
+    return {
+      id: place.externalId ?? place._id.toString(),
+      source: 'TOUR_API',
+      contentTypeId: place.contentTypeId ?? 0,
+      contentTypeLabel: place.category ?? null,
+      lclsSystm1: place.lclsSystm1 ?? null,
+      lclsSystm1Name: null,
+      lclsSystm2: place.lclsSystm2 ?? null,
+      lclsSystm2Name: null,
+      lclsSystm3: place.lclsSystm3 ?? null,
+      lclsSystm3Name: null,
+      name: place.name,
+      address: place.address || null,
+      areaCode: place.areaCode ?? null,
+      sigunguCode: place.sigunguCode ?? null,
+      thumbnailUrl: place.images[0] ?? null,
+      latitude: place.lat ?? null,
+      longitude: place.lng ?? null,
+    };
+  }
+
+  private toTourPlaceCardPayload(card: PlaceCard) {
+    const tags = [
+      card.contentTypeLabel,
+      card.lclsSystm1Name,
+      card.lclsSystm2Name,
+      card.lclsSystm3Name,
+    ].filter((tag): tag is string => Boolean(tag));
+
+    return {
+      source: 'tour' as const,
+      externalId: card.id,
+      contentTypeId: card.contentTypeId,
+      name: card.name,
+      address: card.address ?? '',
+      lat: card.latitude ?? undefined,
+      lng: card.longitude ?? undefined,
+      category: card.contentTypeLabel ?? undefined,
+      areaCode: card.areaCode ?? undefined,
+      sigunguCode: card.sigunguCode ?? undefined,
+      lclsSystm1: card.lclsSystm1 ?? undefined,
+      lclsSystm2: card.lclsSystm2 ?? undefined,
+      lclsSystm3: card.lclsSystm3 ?? undefined,
+      tags,
+    };
   }
 }

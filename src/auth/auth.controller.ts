@@ -24,6 +24,7 @@ import {
   AuthUser,
   CurrentUser,
 } from '../common/decorators/current-user.decorator';
+import { RateLimit } from '../common/decorators/rate-limit.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
 import {
@@ -52,18 +53,21 @@ export class AuthController {
   ) {}
 
   @Post('signup')
+  @RateLimit(10, 3_600)
   @ApiOperation({ summary: '이메일 회원가입' })
   signup(@Body() dto: SignupDto, @Req() request: Request) {
     return this.auth.signup(dto, this.requestContext.fromRequest(request, dto));
   }
 
   @Post('login')
+  @RateLimit(30, 60)
   @ApiOperation({ summary: '이메일 로그인' })
   login(@Body() dto: LoginDto, @Req() request: Request) {
     return this.auth.login(dto, this.requestContext.fromRequest(request, dto));
   }
 
   @Post('refresh')
+  @RateLimit(60, 60)
   @ApiOperation({ summary: '일회성 Refresh Token Rotation' })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -73,12 +77,18 @@ export class AuthController {
   refresh(
     @Body() dto: RefreshTokenDto,
     @Headers('idempotency-key') headerRequestId: string | undefined,
+    @Req() request: Request,
   ) {
     const operationId = this.refreshOperationId(headerRequestId, dto.requestId);
-    return this.auth.refresh(dto.refreshToken, operationId);
+    return this.auth.refresh(
+      dto.refreshToken,
+      operationId,
+      this.requestContext.fromRequest(request, dto),
+    );
   }
 
   @Post('logout-by-refresh')
+  @RateLimit(60, 60)
   @ApiOperation({ summary: '모바일 Refresh Token 기준 현재 세션 폐기' })
   logoutByRefresh(@Body() dto: LogoutWithRefreshTokenDto) {
     return this.auth.logoutWithRefreshToken(dto.refreshToken);
@@ -101,6 +111,7 @@ export class AuthController {
   }
 
   @Post('join-by-invite')
+  @RateLimit(20, 3_600)
   @ApiOperation({ summary: '설치 ID에 묶인 제한된 guest로 초대방 입장' })
   joinByInvite(@Body() dto: JoinByInviteDto, @Req() request: Request) {
     return this.auth.joinByInvite(
@@ -110,6 +121,7 @@ export class AuthController {
   }
 
   @Get('invites/:inviteCode/preview')
+  @RateLimit(60, 3_600)
   @ApiOperation({ summary: '모바일 게스트 참여 전 초대코드 검증' })
   @ApiParam({ name: 'inviteCode', example: 'ABCD1234' })
   invitePreview(
@@ -124,12 +136,14 @@ export class AuthController {
   }
 
   @Post('social/challenge')
+  @RateLimit(30, 300)
   @ApiOperation({ summary: 'Google/Kakao OIDC nonce 발급' })
   socialChallenge(@Body() dto: SocialChallengeDto) {
     return this.auth.createSocialChallenge(dto.provider, dto.installationId);
   }
 
   @Post('social/:provider')
+  @RateLimit(30, 300)
   @ApiOperation({ summary: '검증된 Google/Kakao ID Token 로그인' })
   socialLogin(
     @Param('provider') provider: string,
@@ -145,6 +159,7 @@ export class AuthController {
   }
 
   @Post('social/kakao/code')
+  @RateLimit(30, 300)
   @ApiOperation({
     summary: 'Kakao Authorization Code로 모바일 가입 또는 로그인',
   })

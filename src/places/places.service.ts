@@ -5,6 +5,12 @@ import axios from 'axios';
 import { Model } from 'mongoose';
 import { AppCacheService } from '../common/cache/app-cache.service';
 import { Place, PlaceDocument } from '../schemas/place.schema';
+import {
+  buildPlacePopularityIncrement,
+  calculatePlacePopularityScore,
+  DEFAULT_PLACE_POPULARITY_STATS,
+  PlacePopularityStats,
+} from './place-popularity';
 
 const KAKAO_SEARCH_TTL = 5 * 60 * 1000; // 5m
 
@@ -23,12 +29,13 @@ export class PlacesService {
     lng?: number;
     page?: number;
     limit?: number;
+    sort?: 'popular';
   }) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const kakaoKey = this.config.get<string>('KAKAO_REST_API_KEY');
 
-    if (query.q && kakaoKey) {
+    if (query.q && kakaoKey && query.sort !== 'popular') {
       const cacheKey = `places:kakao:${JSON.stringify({
         q: query.q,
         page,
@@ -41,7 +48,10 @@ export class PlacesService {
         data: PlaceDocument[];
         meta: { total: number; page: number; limit: number };
       }>(cacheKey);
-      if (cached) return cached;
+      if (cached) {
+        await this.recordSearchResults(cached.data);
+        return cached;
+      }
 
       try {
         const { data } = await axios.get(
@@ -60,6 +70,7 @@ export class PlacesService {
 
         const documents = (data.documents ?? []) as Record<string, string>[];
         const places = await this.bulkUpsertKakaoPlaces(documents);
+        await this.recordSearchResults(places);
         const result = {
           data: places,
           meta: {
@@ -82,23 +93,28 @@ export class PlacesService {
     const [data, total] = await Promise.all([
       this.placeModel
         .find(filter)
-        .sort({ popularityScore: -1 })
+        .sort({ popularityScore: -1, _id: 1 })
         .skip((page - 1) * limit)
         .limit(limit),
       this.placeModel.countDocuments(filter),
     ]);
 
+    await this.recordSearchResults(data);
     return { data, meta: { total, page, limit } };
   }
 
   async findById(id: string) {
-    const place = await this.placeModel.findById(id);
+    const place = await this.placeModel.findByIdAndUpdate(
+      id,
+      buildPlacePopularityIncrement('detailViewCount'),
+      { new: true },
+    );
     if (!place) throw new NotFoundException('Place not found');
     return place;
   }
 
   async findSimilar(placeId: string) {
-    const place = await this.findById(placeId);
+    const place = await this.findPlaceById(placeId);
     const filter: Record<string, unknown> = {
       _id: { $ne: place._id },
     };
@@ -111,20 +127,53 @@ export class PlacesService {
 
     const similar = await this.placeModel
       .find(filter)
-      .sort({ popularityScore: -1 })
+      .sort({ popularityScore: -1, _id: 1 })
       .limit(10);
 
     if (similar.length > 0) return similar;
 
     return this.placeModel
       .find({ _id: { $ne: place._id } })
-      .sort({ popularityScore: -1 })
+      .sort({ popularityScore: -1, _id: 1 })
       .limit(10);
   }
 
   async seedPopularPlaces() {
     const count = await this.placeModel.countDocuments();
     if (count > 0) return;
+
+    const now = new Date();
+    const makeSeedStats = (
+      stats: Partial<PlacePopularityStats>,
+    ): PlacePopularityStats => ({
+      ...DEFAULT_PLACE_POPULARITY_STATS,
+      ...stats,
+    });
+
+    const seongsanStats = makeSeedStats({
+      searchCount: 40,
+      detailViewCount: 12,
+      saveCount: 3,
+      candidateAddCount: 1,
+    });
+    const haeundaeStats = makeSeedStats({
+      searchCount: 38,
+      detailViewCount: 11,
+      saveCount: 3,
+      candidateAddCount: 1,
+    });
+    const bulguksaStats = makeSeedStats({
+      searchCount: 35,
+      detailViewCount: 10,
+      saveCount: 3,
+      candidateAddCount: 1,
+    });
+    const anmokStats = makeSeedStats({
+      searchCount: 34,
+      detailViewCount: 9,
+      saveCount: 2,
+      candidateAddCount: 1,
+    });
 
     await this.placeModel.insertMany([
       {
@@ -135,7 +184,9 @@ export class PlacesService {
         tags: ['자연', '바다', '사진스팟'],
         category: '관광',
         description: '유네스코 세계자연유산',
-        popularityScore: 100,
+        stats: seongsanStats,
+        popularityScore: calculatePlacePopularityScore(seongsanStats),
+        popularityUpdatedAt: now,
         source: 'manual',
       },
       {
@@ -146,7 +197,9 @@ export class PlacesService {
         tags: ['바다', '해변'],
         category: '관광',
         description: '대표 해변',
-        popularityScore: 95,
+        stats: haeundaeStats,
+        popularityScore: calculatePlacePopularityScore(haeundaeStats),
+        popularityUpdatedAt: now,
         source: 'manual',
       },
       {
@@ -157,7 +210,9 @@ export class PlacesService {
         tags: ['문화', '역사'],
         category: '관광',
         description: '신라 대표 사찰',
-        popularityScore: 90,
+        stats: bulguksaStats,
+        popularityScore: calculatePlacePopularityScore(bulguksaStats),
+        popularityUpdatedAt: now,
         source: 'manual',
       },
       {
@@ -168,7 +223,9 @@ export class PlacesService {
         tags: ['바다', '카페'],
         category: '관광',
         description: '커피거리',
-        popularityScore: 85,
+        stats: anmokStats,
+        popularityScore: calculatePlacePopularityScore(anmokStats),
+        popularityUpdatedAt: now,
         source: 'manual',
       },
     ]);
@@ -195,7 +252,13 @@ export class PlacesService {
       return {
         updateOne: {
           filter: { externalId, source: 'kakao' as const },
-          update: { $set: payload },
+          update: {
+            $set: payload,
+            $setOnInsert: {
+              stats: { ...DEFAULT_PLACE_POPULARITY_STATS },
+              popularityScore: 0,
+            },
+          },
           upsert: true,
         },
       };
@@ -212,6 +275,38 @@ export class PlacesService {
     const byExternal = new Map(
       places.map((p) => [String(p.externalId), p] as const),
     );
-    return ids.map((id) => byExternal.get(id)).filter(Boolean);
+    return ids
+      .map((id) => byExternal.get(id))
+      .filter(Boolean) as PlaceDocument[];
+  }
+
+  private async findPlaceById(id: string) {
+    const place = await this.placeModel.findById(id);
+    if (!place) throw new NotFoundException('Place not found');
+    return place;
+  }
+
+  private async recordSearchResults(
+    places: Array<{ _id?: unknown } | null | undefined>,
+  ) {
+    const ids = [
+      ...new Set(
+        places
+          .map((place) => place?._id?.toString())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (ids.length === 0) return;
+
+    const now = new Date();
+    await this.placeModel.bulkWrite(
+      ids.map((id) => ({
+        updateOne: {
+          filter: { _id: id },
+          update: buildPlacePopularityIncrement('searchCount', 1, now),
+        },
+      })),
+      { ordered: false },
+    );
   }
 }

@@ -38,11 +38,15 @@ import {
   assertValidDay,
   tripDayCount,
 } from './schedule.validation';
+import { buildPlacePopularityIncrement } from '../places/place-popularity';
 
 const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function generateInviteCode() {
-  return Array.from({ length: 8 }, () => INVITE_CODE_ALPHABET[randomInt(INVITE_CODE_ALPHABET.length)]).join('');
+  return Array.from(
+    { length: 8 },
+    () => INVITE_CODE_ALPHABET[randomInt(INVITE_CODE_ALPHABET.length)],
+  ).join('');
 }
 
 @Injectable()
@@ -64,9 +68,7 @@ export class RoomsService {
     const room = await this.roomModel.findById(roomId);
     if (!room) throw new NotFoundException('Room not found');
 
-    const isMember = room.members.some(
-      (m) => m.userId.toString() === userId,
-    );
+    const isMember = room.members.some((m) => m.userId.toString() === userId);
     if (!isMember) throw new ForbiddenException('Not a room member');
 
     return room;
@@ -95,7 +97,14 @@ export class RoomsService {
     if (itemCount > 0) step += 1;
 
     const percent = Math.min(100, Math.round((step / 5) * 100));
-    const labels = ['시작 전', '여행지 설정', '일정 설정', '동행자 초대', '후보 수집', '일정 작성'];
+    const labels = [
+      '시작 전',
+      '여행지 설정',
+      '일정 설정',
+      '동행자 초대',
+      '후보 수집',
+      '일정 작성',
+    ];
     return {
       label: labels[step] ?? '진행 중',
       currentStep: step,
@@ -153,8 +162,14 @@ export class RoomsService {
     return this.formatRoom(room);
   }
 
-  async createFromCompatibility(userId: string, dto: CreateFromCompatibilityDto) {
-    const memberIds = [userId, ...dto.memberUserIds.filter((id) => id !== userId)];
+  async createFromCompatibility(
+    userId: string,
+    dto: CreateFromCompatibilityDto,
+  ) {
+    const memberIds = [
+      userId,
+      ...dto.memberUserIds.filter((id) => id !== userId),
+    ];
     const users = await this.userModel.find({ _id: { $in: memberIds } });
     const inviteCode = generateInviteCode();
 
@@ -206,7 +221,11 @@ export class RoomsService {
     return this.formatRoom(room);
   }
 
-  async updateDestination(roomId: string, userId: string, dto: UpdateDestinationDto) {
+  async updateDestination(
+    roomId: string,
+    userId: string,
+    dto: UpdateDestinationDto,
+  ) {
     const room = await this.getRoomForMember(roomId, userId);
     this.assertRoomOwner(room, userId);
     room.destination = dto;
@@ -403,7 +422,8 @@ export class RoomsService {
     if (!place) throw new NotFoundException('Place not found');
 
     const exists = room.candidatePlaces.some(
-      (c) => c.placeId.toString() === placeId && c.addedBy.toString() === userId,
+      (c) =>
+        c.placeId.toString() === placeId && c.addedBy.toString() === userId,
     );
     if (!exists) {
       room.candidatePlaces.push({
@@ -415,6 +435,10 @@ export class RoomsService {
       });
       room.progress = this.computeProgress(room);
       await room.save();
+      await this.placeModel.updateOne(
+        { _id: new Types.ObjectId(placeId) },
+        buildPlacePopularityIncrement('candidateAddCount'),
+      );
     }
     return this.listCandidates(roomId, userId);
   }
@@ -423,10 +447,7 @@ export class RoomsService {
     const room = await this.getRoomForMember(roomId, userId);
     room.candidatePlaces = room.candidatePlaces.filter(
       (c) =>
-        !(
-          c.placeId.toString() === placeId &&
-          c.addedBy.toString() === userId
-        ),
+        !(c.placeId.toString() === placeId && c.addedBy.toString() === userId),
     );
     room.progress = this.computeProgress(room);
     await room.save();
@@ -486,7 +507,11 @@ export class RoomsService {
     return item;
   }
 
-  async reorderSchedule(roomId: string, userId: string, dto: ReorderScheduleDto) {
+  async reorderSchedule(
+    roomId: string,
+    userId: string,
+    dto: ReorderScheduleDto,
+  ) {
     const room = await this.getRoomForMember(roomId, userId);
     const dayPlan = room.schedule.days.find((d) => d.day === dto.day);
     if (!dayPlan) throw new NotFoundException('Day not found');
@@ -581,10 +606,7 @@ export class RoomsService {
     const room = await this.getRoomForMember(roomId, userId);
     const currentVersion = room.scheduleVersion ?? 0;
 
-    if (
-      dto.expectedVersion != null &&
-      dto.expectedVersion !== currentVersion
-    ) {
+    if (dto.expectedVersion != null && dto.expectedVersion !== currentVersion) {
       throw new ConflictException({
         message:
           '일정이 다른 멤버에 의해 먼저 수정되었습니다. 최신 일정을 다시 불러온 뒤 저장하세요.',
@@ -684,7 +706,11 @@ export class RoomsService {
     return buildCourses(room.destination?.name);
   }
 
-  async setScheduleStyle(roomId: string, userId: string, style: 'jType' | 'pType') {
+  async setScheduleStyle(
+    roomId: string,
+    userId: string,
+    style: 'jType' | 'pType',
+  ) {
     const room = await this.getRoomForMember(roomId, userId);
     this.assertRoomOwner(room, userId);
     room.scheduleStyle = style;

@@ -69,8 +69,12 @@ export class SignupDto extends DeviceMetadataDto {
 }
 
 export class RefreshTokenDto extends DeviceMetadataDto {
-  @ApiProperty({ description: '로그인 또는 직전 갱신에서 받은 Refresh Token' })
+  @ApiProperty({
+    description: '로그인 또는 직전 갱신에서 받은 Refresh Token',
+    maxLength: 512,
+  })
   @IsString()
+  @Length(32, 512)
   refreshToken: string;
 
   @ApiPropertyOptional({ description: 'Idempotency-Key 헤더 대신 사용 가능' })
@@ -89,9 +93,12 @@ export class LogoutDto {
 }
 
 export class LogoutWithRefreshTokenDto {
-  @ApiProperty({ description: '폐기할 모바일 Refresh Token' })
+  @ApiProperty({
+    description: '폐기할 모바일 Refresh Token',
+    maxLength: 512,
+  })
   @IsString()
-  @MinLength(32)
+  @Length(32, 512)
   refreshToken: string;
 }
 
@@ -139,12 +146,20 @@ export class SocialChallengeDto {
 }
 
 export class SocialLoginDto extends DeviceMetadataDto {
-  @ApiProperty({ description: 'Provider가 발급한 OIDC ID Token' })
+  @ApiProperty({
+    description: 'Provider가 발급한 OIDC ID Token',
+    maxLength: 8192,
+  })
   @IsString()
+  @MaxLength(8192)
   idToken: string;
 
-  @ApiProperty({ description: '/auth/social/challenge에서 받은 ID' })
+  @ApiProperty({
+    description: '/auth/social/challenge에서 받은 ID',
+    maxLength: 128,
+  })
   @IsString()
+  @Length(16, 128)
   challengeId: string;
 }
 

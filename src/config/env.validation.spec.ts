@@ -37,6 +37,14 @@ function productionEnvironment() {
 }
 
 describe('validateEnvironment', () => {
+  it('rejects placeholder secrets outside test mode before startup', () => {
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_SECRET: 'change-me-access-secret',
+      }),
+    ).toThrow('unsafe placeholder');
+  });
+
   it('accepts a valid production RSA key ring', () => {
     expect(() => validateEnvironment(productionEnvironment())).not.toThrow();
   });

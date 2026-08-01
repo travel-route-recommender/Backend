@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
+import { ClientSession, Connection, Model, Types } from 'mongoose';
 import {
   AuthSession,
   AuthSessionDocument,
@@ -197,6 +197,7 @@ export class AuthSessionService {
   async refresh(
     refreshToken: string,
     operationId: string,
+    context: ClientContext,
   ): Promise<AuthTokenResponse> {
     const now = new Date();
     const tokenHash = this.crypto.hashToken(refreshToken);
@@ -212,6 +213,16 @@ export class AuthSessionService {
       })
       .select('+encryptedResponse');
     if (cached) {
+      const cachedSession = await this.authSessionModel.findById(
+        cached.sessionId,
+      );
+      if (!cachedSession) throw this.invalidRefresh();
+      this.assertRefreshSessionActive(
+        cachedSession,
+        cachedSession.idleExpiresAt,
+        now,
+      );
+      await this.assertRefreshContext(cachedSession, context);
       return this.crypto.decryptJson<AuthTokenResponse>(
         cached.encryptedResponse,
       );
@@ -230,6 +241,7 @@ export class AuthSessionService {
       tokenBeforeRotation.expiresAt,
       now,
     );
+    await this.assertRefreshContext(authSessionBeforeRotation, context);
 
     const transactionResult = await this.connection.transaction(
       async (mongoSession): Promise<RefreshTransactionResult> => {
@@ -272,6 +284,28 @@ export class AuthSessionService {
             }) === 'duplicate' &&
             duplicateOperation
           ) {
+            const duplicateSession = await this.authSessionModel
+              .findById(usedToken.sessionId)
+              .session(mongoSession);
+            if (!duplicateSession) {
+              return {
+                kind: 'reuse',
+                sessionId: usedToken.sessionId.toString(),
+              };
+            }
+            if (!this.refreshContextMatches(duplicateSession, context)) {
+              await this.markFamily(
+                duplicateSession.tokenFamilyId,
+                duplicateSession._id.toString(),
+                'REFRESH_INSTALLATION_MISMATCH',
+                'compromised',
+                mongoSession,
+              );
+              return {
+                kind: 'reuse',
+                sessionId: duplicateSession._id.toString(),
+              };
+            }
             return {
               kind: 'success',
               response: this.crypto.decryptJson<AuthTokenResponse>(
@@ -313,6 +347,19 @@ export class AuthSessionService {
           return {
             kind: 'reuse',
             sessionId: currentToken.sessionId.toString(),
+          };
+        }
+        if (!this.refreshContextMatches(authSession, context)) {
+          await this.markFamily(
+            authSession.tokenFamilyId,
+            authSession._id.toString(),
+            'REFRESH_INSTALLATION_MISMATCH',
+            'compromised',
+            mongoSession,
+          );
+          return {
+            kind: 'reuse',
+            sessionId: authSession._id.toString(),
           };
         }
         this.assertUserActive(user);
@@ -453,6 +500,7 @@ export class AuthSessionService {
     if (await this.securityStore.get(`security:revoked-session:${sessionId}`)) {
       throw authUnauthorized('SESSION_REVOKED', 'Session revoked');
     }
+    await this.assertActiveAccessSession(userId, sessionId, new Date());
     await this.assertUserSecurityState(userId, tokenSecurityVersion);
     await this.apiRateLimit.assertAllowed(sessionId, path, ipPrefix);
   }
@@ -467,26 +515,37 @@ export class AuthSessionService {
     reason: string,
     status: 'revoked' | 'compromised',
   ): Promise<void> {
-    const now = new Date();
     await this.connection.transaction(async (mongoSession) => {
-      await this.refreshTokenModel.updateMany(
-        { familyId, status: 'active' },
-        { $set: { status: 'revoked' } },
-        { session: mongoSession },
-      );
-      await this.authSessionModel.updateOne(
-        { _id: new Types.ObjectId(sessionId) },
-        {
-          $set: {
-            status,
-            revokedAt: now,
-            revokeReason: reason,
-          },
-        },
-        { session: mongoSession },
-      );
+      await this.markFamily(familyId, sessionId, reason, status, mongoSession);
     });
     await this.denyAccessSession(sessionId);
+  }
+
+  private async markFamily(
+    familyId: string,
+    sessionId: string,
+    reason: string,
+    status: 'revoked' | 'compromised',
+    mongoSession?: ClientSession,
+  ): Promise<void> {
+    const now = new Date();
+    const options = mongoSession ? { session: mongoSession } : {};
+    await this.refreshTokenModel.updateMany(
+      { familyId, status: 'active' },
+      { $set: { status: 'revoked' } },
+      options,
+    );
+    await this.authSessionModel.updateOne(
+      { _id: new Types.ObjectId(sessionId) },
+      {
+        $set: {
+          status,
+          revokedAt: now,
+          revokeReason: reason,
+        },
+      },
+      options,
+    );
   }
 
   private async denyAccessSession(sessionId: string): Promise<void> {
@@ -542,6 +601,54 @@ export class AuthSessionService {
     ) {
       throw this.invalidRefresh();
     }
+  }
+
+  private async assertActiveAccessSession(
+    userId: string,
+    sessionId: string,
+    now: Date,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(sessionId)) {
+      throw authUnauthorized('TOKEN_INVALID', 'Access token is invalid');
+    }
+
+    const authSession = await this.authSessionModel
+      .findOne({
+        _id: new Types.ObjectId(sessionId),
+        userId: new Types.ObjectId(userId),
+        status: 'active',
+        idleExpiresAt: { $gt: now },
+        absoluteExpiresAt: { $gt: now },
+      })
+      .select('_id')
+      .exec();
+    if (!authSession) {
+      throw authUnauthorized('SESSION_REVOKED', 'Session revoked');
+    }
+  }
+
+  private async assertRefreshContext(
+    authSession: AuthSessionDocument,
+    context: ClientContext,
+  ): Promise<void> {
+    if (this.refreshContextMatches(authSession, context)) return;
+    await this.revokeFamily(
+      authSession.tokenFamilyId,
+      authSession._id.toString(),
+      'REFRESH_INSTALLATION_MISMATCH',
+      'compromised',
+    );
+    throw this.invalidRefresh();
+  }
+
+  private refreshContextMatches(
+    authSession: AuthSessionDocument,
+    context: ClientContext,
+  ): boolean {
+    return (
+      authSession.installationIdHash ===
+      this.crypto.hashIdentifier(`installation:${context.installationId}`)
+    );
   }
 
   private tokenPurgeAt(absoluteExpiresAt: Date): Date {

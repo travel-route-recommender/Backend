@@ -32,6 +32,48 @@ export class TourPlaceCardDto {
   @ApiProperty({ example: '관광지', nullable: true })
   contentTypeLabel: string | null;
 
+  @ApiPropertyOptional({
+    example: 'NA',
+    nullable: true,
+    description: '신분류체계 대분류 코드',
+  })
+  lclsSystm1?: string | null;
+
+  @ApiPropertyOptional({
+    example: '자연관광',
+    nullable: true,
+    description: '신분류체계 대분류명',
+  })
+  lclsSystm1Name?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'NA02',
+    nullable: true,
+    description: '신분류체계 중분류 코드',
+  })
+  lclsSystm2?: string | null;
+
+  @ApiPropertyOptional({
+    example: '자연생태',
+    nullable: true,
+    description: '신분류체계 중분류명',
+  })
+  lclsSystm2Name?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    nullable: true,
+    description: '신분류체계 소분류 코드',
+  })
+  lclsSystm3?: string | null;
+
+  @ApiPropertyOptional({
+    example: '숲',
+    nullable: true,
+    description: '신분류체계 소분류명',
+  })
+  lclsSystm3Name?: string | null;
+
   @ApiProperty({ example: '성산일출봉 [유네스코 세계자연유산]' })
   name: string;
 
@@ -398,4 +440,25 @@ export class TourCodeItemDto {
 
   @ApiProperty({ example: '서울특별시' })
   name: string;
+}
+
+export class TourRegionCodeDto {
+  @ApiProperty({ example: '1', description: 'KorService2 areaCode' })
+  code: string;
+
+  @ApiProperty({ example: '서울특별시' })
+  name: string;
+
+  @ApiProperty({ type: [TourCodeItemDto], description: '해당 시도의 시군구 코드 목록' })
+  sigungu: TourCodeItemDto[];
+}
+
+export class TourCategoryMiddleCodeDto extends TourCodeItemDto {
+  @ApiProperty({ type: [TourCodeItemDto], description: '소분류 코드 목록' })
+  children: TourCodeItemDto[];
+}
+
+export class TourCategoryCodeTreeDto extends TourCodeItemDto {
+  @ApiProperty({ type: [TourCategoryMiddleCodeDto], description: '중분류 코드 목록' })
+  children: TourCategoryMiddleCodeDto[];
 }

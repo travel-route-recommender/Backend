@@ -88,3 +88,30 @@ describe('TokenService RSA key ring', () => {
     );
   });
 });
+
+describe('TokenService HS256 fallback hardening', () => {
+  it('rejects placeholder HS256 secrets outside test mode', () => {
+    expect(
+      () =>
+        new TokenService(
+          new JwtService(),
+          new ConfigService({
+            NODE_ENV: 'development',
+            JWT_ACCESS_SECRET: 'change-me-access-secret',
+          }),
+        ),
+    ).toThrow('unsafe placeholder');
+  });
+
+  it('requires an explicit strong HS256 secret when RSA keys are absent', () => {
+    expect(
+      () =>
+        new TokenService(
+          new JwtService(),
+          new ConfigService({
+            JWT_ACCESS_SECRET: 'local-development-secret-with-32-characters',
+          }),
+        ),
+    ).not.toThrow();
+  });
+});

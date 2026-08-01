@@ -1,6 +1,8 @@
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { buildCorsOptions, parseCorsOrigins } from './config/cors';
 import { TourDevModule } from './tour-dev.module';
 
 async function bootstrap() {
@@ -15,7 +17,12 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-  app.enableCors();
+  const configService = app.get(ConfigService);
+  app.enableCors(
+    buildCorsOptions(
+      parseCorsOrigins(configService.get<string>('WEB_AUTH_ORIGINS')),
+    ),
+  );
 
   await app.listen(process.env.PORT ?? 3000);
 }

@@ -14,18 +14,22 @@ import {
   ListPlacesQueryDto,
   NearbyPlacesQueryDto,
   PlaceDetailQueryDto,
+  RegionSuggestQueryDto,
   RegionHighlightsQueryDto,
+  SearchWithinRegionQueryDto,
   SearchPlacesQueryDto,
   StayQueryDto,
   SyncQueryDto,
   VisitorsQueryDto,
 } from './dto/tour-query.dto';
 import {
+  TourCategoryCodeTreeDto,
   TourCodeItemDto,
   TourCongestionDto,
   TourFestivalPageDto,
   TourHubPageDto,
   TourPetInfoDto,
+  TourRegionCodeDto,
   TourPlaceDetailDto,
   TourPlacePageDto,
   TourSimilarPageDto,
@@ -156,6 +160,63 @@ export class TourController {
     return this.tourService.list(query);
   }
 
+  @Get('meta/region-codes')
+  @ApiOperation({
+    summary: '[필터용] 지역 코드표',
+    description: '프론트에서 지역명 선택 시 areaCode 매핑용.',
+  })
+  @ApiOkResponse({ type: TourCodeItemDto, isArray: true })
+  regionCodes() {
+    return this.tourService.regionCodes();
+  }
+
+  @Get('meta/region-codes/tree')
+  @ApiOperation({
+    summary: '[필터용] 시도/시군구 코드표',
+    description: '시도별 시군구 목록까지 포함한 코드 트리.',
+  })
+  @ApiOkResponse({ type: TourRegionCodeDto, isArray: true })
+  regionCodeTree() {
+    return this.tourService.regionCodeTree();
+  }
+
+  @Get('regions/suggest')
+  @ApiOperation({
+    summary: '지역 자동완성',
+    description: '지역 검색창 자동완성용 (시도 단위).',
+  })
+  @ApiOkResponse({ type: TourCodeItemDto, isArray: true })
+  suggestRegions(@Query() query: RegionSuggestQueryDto) {
+    return this.tourService.suggestRegions(query.keyword, query.size ?? 10);
+  }
+
+  @Get('regions/:region/places')
+  @ApiOperation({
+    summary: '지역명으로 관광지 목록 조회',
+    description:
+      '지역명(예: 서울, 제주, 경기도)을 지역 코드로 바꿔 해당 지역 관광지만 조회합니다.',
+  })
+  @ApiParam({ name: 'region', example: '제주' })
+  @ApiOkResponse({ type: TourPlacePageDto })
+  listByRegion(@Param('region') region: string, @Query() query: ListPlacesQueryDto) {
+    return this.tourService.listByRegion(region, query);
+  }
+
+  @Get('regions/:region/search')
+  @ApiOperation({
+    summary: '지역 내 여행지 검색',
+    description:
+      '선택한 지역 안에서 키워드로 검색합니다. keyword가 없으면 해당 지역 목록을 반환합니다.',
+  })
+  @ApiParam({ name: 'region', example: '제주' })
+  @ApiOkResponse({ type: TourPlacePageDto })
+  searchWithinRegion(
+    @Param('region') region: string,
+    @Query() query: SearchWithinRegionQueryDto,
+  ) {
+    return this.tourService.searchWithinRegion(region, query);
+  }
+
   @Get('festivals')
   @ApiOperation({
     summary: '행사 · 축제 목록',
@@ -228,5 +289,15 @@ export class TourController {
   @ApiOkResponse({ type: TourCodeItemDto, isArray: true })
   categoryCodes(@Query() query: CategoryCodeQueryDto) {
     return this.tourService.categoryCodes(query);
+  }
+
+  @Get('meta/category-codes/tree')
+  @ApiOperation({
+    summary: '[필터용] 분류체계 코드 트리',
+    description: 'lclsSystmCode2 전체 목록을 대/중/소 트리로 반환합니다.',
+  })
+  @ApiOkResponse({ type: TourCategoryCodeTreeDto, isArray: true })
+  categoryCodeTree() {
+    return this.tourService.categoryCodeTree();
   }
 }

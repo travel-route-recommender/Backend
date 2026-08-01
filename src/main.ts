@@ -1,7 +1,9 @@
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { buildCorsOptions, parseCorsOrigins } from './config/cors';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
@@ -16,7 +18,12 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-  app.enableCors();
+  const configService = app.get(ConfigService);
+  app.enableCors(
+    buildCorsOptions(
+      parseCorsOrigins(configService.get<string>('WEB_AUTH_ORIGINS')),
+    ),
+  );
 
   const config = new DocumentBuilder()
     .setTitle('Tourmate API')

@@ -12,8 +12,10 @@ export class DestinationsService {
   async getPopular() {
     return this.placeModel
       .find()
-      .sort({ popularityScore: -1 })
+      .sort({ popularityScore: -1, _id: 1 })
       .limit(10)
-      .select('name address lat lng tags category popularityScore images');
+      .select(
+        'name address lat lng tags category popularityScore stats images',
+      );
   }
 }

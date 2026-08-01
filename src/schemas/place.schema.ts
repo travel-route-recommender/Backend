@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { DEFAULT_PLACE_POPULARITY_STATS } from '../places/place-popularity';
+import type { PlacePopularityStats } from '../places/place-popularity';
 
 export type PlaceDocument = HydratedDocument<Place>;
 
@@ -26,6 +28,21 @@ export class Place {
   @Prop()
   lng?: number;
 
+  @Prop()
+  areaCode?: string;
+
+  @Prop()
+  sigunguCode?: string;
+
+  @Prop()
+  lclsSystm1?: string;
+
+  @Prop()
+  lclsSystm2?: string;
+
+  @Prop()
+  lclsSystm3?: string;
+
   @Prop({ type: [String], default: [] })
   images: string[];
 
@@ -47,6 +64,20 @@ export class Place {
   @Prop({ default: 0 })
   popularityScore: number;
 
+  @Prop({
+    type: {
+      searchCount: { type: Number, default: 0 },
+      detailViewCount: { type: Number, default: 0 },
+      saveCount: { type: Number, default: 0 },
+      candidateAddCount: { type: Number, default: 0 },
+    },
+    default: () => ({ ...DEFAULT_PLACE_POPULARITY_STATS }),
+  })
+  stats: PlacePopularityStats;
+
+  @Prop()
+  popularityUpdatedAt?: Date;
+
   @Prop()
   phone?: string;
 
@@ -59,3 +90,5 @@ PlaceSchema.index({ externalId: 1, source: 1 }, { sparse: true });
 PlaceSchema.index({ name: 'text', address: 'text' });
 PlaceSchema.index({ tags: 1 });
 PlaceSchema.index({ category: 1 });
+PlaceSchema.index({ popularityScore: -1, _id: 1 });
+PlaceSchema.index({ source: 1, areaCode: 1, sigunguCode: 1, contentTypeId: 1 });

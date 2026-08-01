@@ -6,6 +6,11 @@ import { AccessTokenClaims, AccountType } from './auth.types';
 
 @Injectable()
 export class TokenService {
+  private static readonly UNSAFE_HS256_SECRETS = new Set([
+    'change-me-access-secret',
+    'tourmate-development-only-secret-not-for-production',
+  ]);
+
   readonly issuer: string;
   readonly audience: string;
   readonly accessTokenLifetimeSeconds: number;
@@ -29,7 +34,12 @@ export class TokenService {
 
     const privateKey = this.decodeKey('JWT_ACCESS_PRIVATE_KEY_BASE64');
     const publicKey = this.decodeKey('JWT_ACCESS_PUBLIC_KEY_BASE64');
-    if (privateKey && publicKey) {
+    if (privateKey || publicKey) {
+      if (!privateKey || !publicKey) {
+        throw new Error(
+          'JWT_ACCESS_PRIVATE_KEY_BASE64 and JWT_ACCESS_PUBLIC_KEY_BASE64 must be configured together',
+        );
+      }
       this.algorithm = 'RS256';
       this.signingKey = privateKey;
       this.verificationKey = publicKey;
@@ -43,10 +53,11 @@ export class TokenService {
         this.verificationKeys.set(keyId, key);
       }
     } else {
+      if (this.config.get('NODE_ENV') === 'production') {
+        throw new Error('Production access tokens require asymmetric JWT keys');
+      }
       this.algorithm = 'HS256';
-      const secret =
-        this.config.get<string>('JWT_ACCESS_SECRET') ??
-        'tourmate-development-only-secret-not-for-production';
+      const secret = this.hs256Secret();
       this.signingKey = secret;
       this.verificationKey = secret;
       this.verificationKeys.set(this.keyId, secret);
@@ -132,6 +143,29 @@ export class TokenService {
   private decodeKey(name: string): string | undefined {
     const value = this.config.get<string>(name);
     return value ? Buffer.from(value, 'base64').toString('utf8') : undefined;
+  }
+
+  private hs256Secret(): string {
+    const secret = this.config.get<string>('JWT_ACCESS_SECRET')?.trim();
+    const isTest = this.config.get('NODE_ENV') === 'test';
+    if (isTest && (!secret || TokenService.UNSAFE_HS256_SECRETS.has(secret))) {
+      return 'tourmate-test-only-secret-with-at-least-32-chars';
+    }
+    if (!secret) {
+      if (isTest) {
+        return 'tourmate-test-only-secret-with-at-least-32-chars';
+      }
+      throw new Error(
+        'JWT_ACCESS_SECRET is required when asymmetric JWT keys are not configured',
+      );
+    }
+    if (!isTest && TokenService.UNSAFE_HS256_SECRETS.has(secret)) {
+      throw new Error('JWT_ACCESS_SECRET contains an unsafe placeholder value');
+    }
+    if (secret.length < 32) {
+      throw new Error('JWT_ACCESS_SECRET must contain at least 32 characters');
+    }
+    return secret;
   }
 
   private previousPublicKeys(): Map<string, string> {
