@@ -11,6 +11,7 @@ import {
   PlaceDto,
   PlaceSearchPageDto,
 } from '../common/dto/swagger-responses.dto';
+import { RateLimit } from '../common/decorators/rate-limit.decorator';
 
 @ApiTags('장소 · Kakao/DB')
 @Controller('places')
@@ -38,6 +39,7 @@ export class PlacesController {
   @ApiQuery({ name: 'page', required: false, example: '1' })
   @ApiQuery({ name: 'limit', required: false, example: '20' })
   @ApiOkResponse({ type: PlaceSearchPageDto })
+  @RateLimit(30, 60)
   search(
     @Query('q') q?: string,
     @Query('category') category?: string,

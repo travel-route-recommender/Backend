@@ -15,6 +15,9 @@ export type TourServiceKind =
   | 'datalab'
   | 'cnctr';
 
+const TOUR_API_UNAVAILABLE_MESSAGE =
+  '관광정보 제공 기관 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요.';
+
 /**
  * 한국관광공사 TourAPI 공통 클라이언트.
  * KorService2 + 특화 서비스(연관/중심/방문자/집중률)를 base URL만 바꿔 호출한다.
@@ -103,7 +106,7 @@ export class TourApiClient {
         throw new HttpException(
           {
             code: 'TOUR_API_UNAVAILABLE',
-            message: '관광정보 API 응답 오류',
+            message: TOUR_API_UNAVAILABLE_MESSAGE,
           },
           HttpStatus.BAD_GATEWAY,
         );
@@ -144,7 +147,7 @@ export class TourApiClient {
       throw new HttpException(
         {
           code: 'TOUR_API_UNAVAILABLE',
-          message: '관광정보 API 호출 실패',
+          message: TOUR_API_UNAVAILABLE_MESSAGE,
         },
         HttpStatus.BAD_GATEWAY,
       );

@@ -38,10 +38,19 @@ export class Place {
   lclsSystm1?: string;
 
   @Prop()
+  lclsSystm1Name?: string;
+
+  @Prop()
   lclsSystm2?: string;
 
   @Prop()
+  lclsSystm2Name?: string;
+
+  @Prop()
   lclsSystm3?: string;
+
+  @Prop()
+  lclsSystm3Name?: string;
 
   @Prop({ type: [String], default: [] })
   images: string[];

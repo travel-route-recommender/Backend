@@ -127,6 +127,33 @@ export class PlaceDto {
   @ApiPropertyOptional({ example: 126.942 })
   lng?: number;
 
+  @ApiPropertyOptional({ example: '39', description: 'TourAPI areaCode' })
+  areaCode?: string;
+
+  @ApiPropertyOptional({ example: '4', description: 'TourAPI sigunguCode' })
+  sigunguCode?: string;
+
+  @ApiPropertyOptional({ example: 'NA', description: '신분류체계 대분류 코드' })
+  lclsSystm1?: string;
+
+  @ApiPropertyOptional({ example: '자연관광', description: '신분류체계 대분류명' })
+  lclsSystm1Name?: string;
+
+  @ApiPropertyOptional({ example: 'NA02', description: '신분류체계 중분류 코드' })
+  lclsSystm2?: string;
+
+  @ApiPropertyOptional({ example: '자연생태', description: '신분류체계 중분류명' })
+  lclsSystm2Name?: string;
+
+  @ApiPropertyOptional({
+    example: 'NA020400',
+    description: '신분류체계 소분류 코드',
+  })
+  lclsSystm3?: string;
+
+  @ApiPropertyOptional({ example: '숲', description: '신분류체계 소분류명' })
+  lclsSystm3Name?: string;
+
   @ApiProperty({
     type: String,
     isArray: true,
