@@ -65,6 +65,31 @@ export class CandidatePlace {
 }
 
 @Schema({ _id: false })
+export class ScheduleTicket {
+  @Prop({ required: true })
+  id: string;
+
+  /** Public path, e.g. /uploads/tickets/{roomId}/{file} */
+  @Prop({ required: true })
+  imageUrl: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  uploadedBy: Types.ObjectId;
+
+  @Prop()
+  note?: string;
+
+  @Prop()
+  originalName?: string;
+
+  @Prop()
+  mimeType?: string;
+
+  @Prop({ default: () => new Date() })
+  createdAt: Date;
+}
+
+@Schema({ _id: false })
 export class ItineraryItem {
   @Prop({ required: true })
   id: string;
@@ -98,6 +123,9 @@ export class ItineraryItem {
 
   @Prop()
   lng?: number;
+
+  @Prop({ type: [ScheduleTicket], default: [] })
+  tickets: ScheduleTicket[];
 }
 
 @Schema({ _id: false })

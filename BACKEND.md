@@ -50,6 +50,7 @@ TripMatch / Tourmate **메인 REST API 서버**
 | Rooms | `/rooms` | 여행방 CRUD, 후보, 일정, 궁합, 코스 |
 | Invites | `/invites` | 초대 수락 |
 | Duri | `/rooms/:roomId/duri` | 두리 제안·분석 (rule-based MVP) |
+| Mobility | `/mobility` | Kakao Mobility 자동차 경로·이동시간 BFF |
 | Places | `/places` | 장소 검색·상세·유사 |
 | Destinations | `/destinations` | 인기 여행지 |
 
@@ -80,7 +81,8 @@ TripMatch / Tourmate **메인 REST API 서버**
 
 | 이름 | 상태 | Method | Path | 인증 | description |
 |------|------|--------|------|------|-------------|
-| 내 프로필 | 완료 | GET | `/users/me` | ✅ Bearer | 프로필 + ongoing/completed 여행 수 |
+| 유저 목록 | 완료 | GET | `/users` | ✅ Bearer | 전체 회원 PublicUser · page/limit/q |
+| 내 프로필 | 완료 | GET | `/users/me` | ✅ Bearer | 전체 필드 + ongoing/completed 여행 수 |
 | TravelType 조회 | 완료 | GET | `/users/me/travel-type` | ✅ Bearer | 두리 테스트 결과 |
 | 여행 통계 | 완료 | GET | `/users/me/trips-summary` | ✅ Bearer | ongoing / completed count |
 | 프로필 수정 | 완료 | PATCH | `/users/me/profile` | ✅ Bearer | nickname, profileImageUrl |
@@ -110,10 +112,12 @@ TripMatch / Tourmate **메인 REST API 서버**
 
 ### Places
 
+공통 **CommonPlace** 형식 (`placeId`, `externalId`, `source`, `lat`/`lng`, …). Tour·Kakao·후보 `place` 동일.
+
 | 이름 | 상태 | Method | Path | 인증 | description |
 |------|------|--------|------|------|-------------|
-| 장소 검색 | 완료 | GET | `/places/search` | ❌ | q, category, lat, lng, page, limit — Kakao → DB upsert |
-| 장소 상세 | 완료 | GET | `/places/:placeId` | ❌ | |
+| 장소 검색 | 완료 | GET | `/places/search` | ❌ | Kakao → DB upsert → CommonPlace |
+| 장소 상세 | 완료 | GET | `/places/:placeId` | ❌ | CommonPlace |
 | 유사 장소 | 완료 | GET | `/places/:placeId/similar` | ❌ | tags/category 기준 |
 
 ### Destinations
@@ -172,7 +176,10 @@ TripMatch / Tourmate **메인 REST API 서버**
 | 순서 변경 | 완료 | PATCH | `/rooms/:roomId/schedule/reorder` | ✅ Bearer | drag-drop |
 | 항목 수정 | 완료 | PATCH | `/rooms/:roomId/schedule/items/:itemId` | ✅ Bearer | |
 | 항목 삭제 | 완료 | DELETE | `/rooms/:roomId/schedule/items/:itemId` | ✅ Bearer | |
-| batch 저장 | 완료 | PUT | `/rooms/:roomId/schedule` | ✅ Bearer | days[] 일괄 |
+| 입장권 목록 | 완료 | GET | `/rooms/:roomId/schedule/items/:itemId/tickets` | ✅ Bearer | |
+| 입장권 업로드 | 완료 | POST | `/rooms/:roomId/schedule/items/:itemId/tickets` | ✅ Bearer | multipart `image` · `/uploads` |
+| 입장권 삭제 | 완료 | DELETE | `/rooms/:roomId/schedule/items/:itemId/tickets/:ticketId` | ✅ Bearer | |
+| batch 저장 | 완료 | PUT | `/rooms/:roomId/schedule` | ✅ Bearer | days[] 일괄 · tickets는 item id로 유지 |
 | priority 로직 | 시작 전 | — | — | — | must/optional/skip 필드만 저장 |
 
 ### Invites
@@ -192,9 +199,10 @@ TripMatch / Tourmate **메인 REST API 서버**
 | 취향 반영 | MVP | POST | `/rooms/:roomId/duri/reflect-preferences` | ✅ Bearer | compatibility 재사용 |
 | 동선 최적화 | MVP | POST | `/rooms/:roomId/duri/optimize` | ✅ Bearer | stub |
 | 일정 초안 | MVP | POST | `/rooms/:roomId/duri/generate-draft` | ✅ Bearer | stub |
-| 분석 리포트 생성 | MVP | POST | `/rooms/:roomId/duri/analysis-report` | ✅ Bearer | heuristic |
+| 분석 리포트 생성 | MVP | POST | `/rooms/:roomId/duri/analysis-report` | ✅ Bearer | Kakao Mobility로 segment 거리·시간 채움 |
 | 최신 리포트 | 완료 | GET | `/rooms/:roomId/duri/analysis-report/latest` | ✅ Bearer | |
-| Kakao Directions | 시작 전 | — | — | — | Phase 2 |
+| 자동차 길찾기 | 완료 | POST | `/mobility/directions` | ✅ Bearer | REST 키 · 막차 미포함 |
+| 막차시간 | 시작 전 | — | — | — | Kakao Map 범위 밖 · Phase 2 |
 | LLM 두리 | 시작 전 | — | — | — | Phase 3 |
 | WebSocket 협업 | 시작 전 | — | — | — | Phase 3 |
 
@@ -248,8 +256,8 @@ POST /rooms/:id/duri/* (두리 제안 — MVP stub)
 | API 그룹 | Bearer 필요 |
 |----------|-------------|
 | `/auth/signup`, `/login`, `/refresh`, `/join-by-invite`, `/oauth/kakao` | ❌ |
-| `/quiz/questions`, `/places/*`, `/destinations/*` | ❌ |
-| 그 외 전부 | ✅ |
+| `/quiz/questions`, `/places/*`, `/destinations/*`, `/tour/*` | ❌ |
+| `/mobility/*`, 그 외 인증 API | ✅ |
 
 ---
 
@@ -264,7 +272,9 @@ JWT_ACCESS_SECRET=...
 JWT_REFRESH_SECRET=...
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
-KAKAO_REST_API_KEY=          # 장소 검색 (선택)
+KAKAO_REST_API_KEY=          # Local 검색 + Mobility 길찾기 (서버 REST 키)
+UPLOAD_DIR=uploads           # 입장권 사진 로컬 저장 · 정적 /uploads/*
+# EXPO_PUBLIC_KAKAO_MAP_JAVASCRIPT_KEY 는 프론트 지도용 — 백엔드에 넣지 않음
 INVITE_LINK_BASE=tripmatch://invite
 ```
 

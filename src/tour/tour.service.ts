@@ -64,7 +64,7 @@ export class TourService {
   ) {}
 
   async list(query: ListPlacesQueryDto): Promise<PlacePage> {
-    const key = `tour:list:${JSON.stringify(query)}`;
+    const key = `tour:v2:list:${JSON.stringify(query)}`;
     const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
@@ -83,7 +83,7 @@ export class TourService {
   }
 
   async search(query: SearchPlacesQueryDto): Promise<PlacePage> {
-    const key = `tour:search:${JSON.stringify(query)}`;
+    const key = `tour:v2:search:${JSON.stringify(query)}`;
     const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
@@ -111,7 +111,7 @@ export class TourService {
       size: query.size ?? 20,
       page: query.page ?? 1,
     };
-    const key = `tour:nearby:${JSON.stringify(cacheQuery)}`;
+    const key = `tour:v2:nearby:${JSON.stringify(cacheQuery)}`;
     const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
@@ -139,7 +139,7 @@ export class TourService {
     contentId: string,
     contentTypeId?: number,
   ): Promise<PlaceDetail> {
-    const key = `tour:place:${contentId}`;
+    const key = `tour:v2:place:${contentId}`;
     const cached = await this.cache.get<PlaceDetail>(key);
     if (cached) return cached;
 
@@ -164,20 +164,30 @@ export class TourService {
       this.safeCall('detailImage2', { contentId, imageYN: 'Y' }),
     ]);
 
+    const gallery = toPlaceImages(extractItems(images));
+    const overview = commonItem.overview || null;
+    const phone = commonItem.tel || null;
+    const placeUrl = commonItem.homepage || null;
+    const imageUrls = gallery.map((g) => g.url).filter(Boolean);
+
     const detail: PlaceDetail = {
       ...card,
-      placeId: null,
-      overview: commonItem.overview || null,
-      homepage: commonItem.homepage || null,
-      tel: commonItem.tel || null,
+      phone,
+      placeUrl,
+      description: overview,
+      images: imageUrls.length > 0 ? imageUrls : card.images,
+      gallery,
+      overview,
       areaCode: commonItem.areacode || null,
       sigunguCode: commonItem.sigungucode || null,
-      images: toPlaceImages(extractItems(images)),
       intro: (extractItems(intro)[0] ?? {}) as Record<string, unknown>,
       repeatingInfo: extractItems(info) as Record<string, unknown>[],
     };
 
     detail.placeId = await this.upsertPlace(detail);
+    if (detail.placeId) {
+      detail.id = detail.placeId;
+    }
     await this.cache.set(key, detail, DETAIL_TTL);
     return detail;
   }
@@ -273,7 +283,7 @@ export class TourService {
     data: RelatedPlaceCard[];
     meta: { total: number; page: number; size: number; source: string };
   }> {
-    if (detail.longitude == null || detail.latitude == null) {
+    if (detail.lng == null || detail.lat == null) {
       return {
         data: [],
         meta: { total: 0, page: 1, size, source: 'NEARBY_FALLBACK' },
@@ -281,10 +291,10 @@ export class TourService {
     }
 
     const data = await this.client.call('locationBasedList2', {
-      mapX: detail.longitude,
-      mapY: detail.latitude,
+      mapX: detail.lng,
+      mapY: detail.lat,
       radius: 20000,
-      contentTypeId: contentTypeId ?? detail.contentTypeId,
+      contentTypeId: contentTypeId ?? detail.contentTypeId ?? undefined,
       arrange: 'E',
       numOfRows: size + 1,
       pageNo: 1,
@@ -292,7 +302,7 @@ export class TourService {
 
     const cards: RelatedPlaceCard[] = extractItems(data)
       .map(toPlaceCard)
-      .filter((c) => c.id !== detail.id)
+      .filter((c) => c.externalId !== detail.externalId)
       .slice(0, size)
       .map((c, i) => ({
         ...c,
@@ -483,7 +493,7 @@ export class TourService {
       query.eventStartDate ??
       new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const cacheParams = { ...query, eventStartDate };
-    const key = `tour:festival:${JSON.stringify(cacheParams)}`;
+    const key = `tour:v2:festival:${JSON.stringify(cacheParams)}`;
     const cached = await this.cache.get<Page<FestivalCard>>(key);
     if (cached) return cached;
 
@@ -507,7 +517,7 @@ export class TourService {
 
   /** 숙박 (searchStay2, contentTypeId 32 고정). */
   async stays(query: StayQueryDto): Promise<PlacePage> {
-    const key = `tour:stay:${JSON.stringify(query)}`;
+    const key = `tour:v2:stay:${JSON.stringify(query)}`;
     const cached = await this.cache.get<PlacePage>(key);
     if (cached) return cached;
 
@@ -614,24 +624,27 @@ export class TourService {
    * 내부 PK(_id)와 external_id(contentId)를 분리해 여행방 후보/저장에 재사용.
    */
   private async upsertPlace(detail: PlaceDetail): Promise<string | null> {
-    if (!detail.id || detail.id === 'undefined') return null;
+    if (!detail.externalId || detail.externalId === 'undefined') return null;
 
     const doc = await this.placeModel.findOneAndUpdate(
-      { source: 'tour', externalId: detail.id },
+      { source: 'tour', externalId: detail.externalId },
       {
         $set: {
           source: 'tour',
-          externalId: detail.id,
-          contentTypeId: detail.contentTypeId,
+          externalId: detail.externalId,
+          contentTypeId: detail.contentTypeId ?? undefined,
           name: detail.name,
           address: detail.address ?? '',
-          lat: detail.latitude ?? undefined,
-          lng: detail.longitude ?? undefined,
-          images: detail.images.map((i) => i.url),
-          description: detail.overview ?? '',
+          lat: detail.lat ?? undefined,
+          lng: detail.lng ?? undefined,
+          images:
+            detail.images.length > 0
+              ? detail.images
+              : detail.gallery.map((i) => i.url),
+          description: detail.description ?? detail.overview ?? '',
           category: detail.contentTypeLabel ?? undefined,
-          phone: detail.tel ?? undefined,
-          placeUrl: detail.homepage ?? undefined,
+          phone: detail.phone ?? undefined,
+          placeUrl: detail.placeUrl ?? undefined,
         },
       },
       { upsert: true, new: true },

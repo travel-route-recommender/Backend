@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Model } from 'mongoose';
 import { AppCacheService } from '../common/cache/app-cache.service';
+import { fromMongoPlace } from '../common/place/common-place';
 import { Place, PlaceDocument } from '../schemas/place.schema';
 
 const KAKAO_SEARCH_TTL = 5 * 60 * 1000; // 5m
@@ -29,7 +30,7 @@ export class PlacesService {
     const kakaoKey = this.config.get<string>('KAKAO_REST_API_KEY');
 
     if (query.q && kakaoKey) {
-      const cacheKey = `places:kakao:${JSON.stringify({
+      const cacheKey = `places:v2:kakao:${JSON.stringify({
         q: query.q,
         page,
         limit,
@@ -38,7 +39,7 @@ export class PlacesService {
       })}`;
 
       const cached = await this.cache.get<{
-        data: PlaceDocument[];
+        data: ReturnType<typeof fromMongoPlace>[];
         meta: { total: number; page: number; limit: number };
       }>(cacheKey);
       if (cached) return cached;
@@ -61,7 +62,7 @@ export class PlacesService {
         const documents = (data.documents ?? []) as Record<string, string>[];
         const places = await this.bulkUpsertKakaoPlaces(documents);
         const result = {
-          data: places,
+          data: places.map((p) => fromMongoPlace(p!)),
           meta: {
             total: data.meta?.total_count ?? places.length,
             page,
@@ -88,38 +89,45 @@ export class PlacesService {
       this.placeModel.countDocuments(filter),
     ]);
 
-    return { data, meta: { total, page, limit } };
+    return {
+      data: data.map((p) => fromMongoPlace(p)),
+      meta: { total, page, limit },
+    };
   }
 
   async findById(id: string) {
     const place = await this.placeModel.findById(id);
     if (!place) throw new NotFoundException('Place not found');
-    return place;
+    return fromMongoPlace(place);
   }
 
   async findSimilar(placeId: string) {
-    const place = await this.findById(placeId);
+    const doc = await this.placeModel.findById(placeId);
+    if (!doc) throw new NotFoundException('Place not found');
+
     const filter: Record<string, unknown> = {
-      _id: { $ne: place._id },
+      _id: { $ne: doc._id },
     };
 
-    if (place.tags.length > 0) {
-      filter.tags = { $in: place.tags };
-    } else if (place.category) {
-      filter.category = place.category;
+    if (doc.tags.length > 0) {
+      filter.tags = { $in: doc.tags };
+    } else if (doc.category) {
+      filter.category = doc.category;
     }
 
-    const similar = await this.placeModel
+    let similar = await this.placeModel
       .find(filter)
       .sort({ popularityScore: -1 })
       .limit(10);
 
-    if (similar.length > 0) return similar;
+    if (similar.length === 0) {
+      similar = await this.placeModel
+        .find({ _id: { $ne: doc._id } })
+        .sort({ popularityScore: -1 })
+        .limit(10);
+    }
 
-    return this.placeModel
-      .find({ _id: { $ne: place._id } })
-      .sort({ popularityScore: -1 })
-      .limit(10);
+    return similar.map((p) => fromMongoPlace(p));
   }
 
   async seedPopularPlaces() {

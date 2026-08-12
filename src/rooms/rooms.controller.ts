@@ -8,10 +8,15 @@ import {
   Post,
   Put,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
@@ -19,6 +24,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import {
   AuthUser,
@@ -37,6 +43,7 @@ import {
   UpdateDestinationDto,
   UpdateRoomDto,
   UpdateScheduleItemDto,
+  UploadTicketDto,
 } from './dto/room.dto';
 import {
   AdjustmentPlanDto,
@@ -52,10 +59,12 @@ import {
   RoomScheduleDto,
   ScheduleMapDto,
   ScheduleSummaryDto,
+  ScheduleTicketDto,
+  ScheduleTicketListDto,
   SuccessDto,
   WorkspaceDto,
 } from '../common/dto/swagger-responses.dto';
-
+import { TICKET_MAX_BYTES } from '../common/storage/local-upload.service';
 const ROOM_ID = { name: 'roomId', example: '665abc123def456789012345' };
 
 @ApiTags('여행방')
@@ -386,6 +395,84 @@ export class RoomsController {
     @Param('itemId') itemId: string,
   ) {
     return this.roomsService.deleteScheduleItem(roomId, user.userId, itemId);
+  }
+
+  @Get(':roomId/schedule/items/:itemId/tickets')
+  @ApiOperation({ summary: '일정 항목 입장권 목록' })
+  @ApiParam(ROOM_ID)
+  @ApiParam({ name: 'itemId', example: 'item-1' })
+  @ApiOkResponse({ type: ScheduleTicketListDto })
+  listScheduleTickets(
+    @CurrentUser() user: AuthUser,
+    @Param('roomId') roomId: string,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.roomsService.listScheduleTickets(roomId, user.userId, itemId);
+  }
+
+  @Post(':roomId/schedule/items/:itemId/tickets')
+  @ApiOperation({
+    summary: '일정 항목 입장권 사진 업로드',
+    description:
+      'multipart/form-data. 필드명 `image`(필수), `note`(선택). jpeg/png/webp/heic, 최대 5MB, 항목당 10장.',
+  })
+  @ApiParam(ROOM_ID)
+  @ApiParam({ name: 'itemId', example: 'item-1' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: { type: 'string', format: 'binary' },
+        note: { type: 'string', example: '사전 예매 QR' },
+      },
+    },
+  })
+  @ApiCreatedResponse({ type: ScheduleTicketDto })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: memoryStorage(),
+      limits: { fileSize: TICKET_MAX_BYTES },
+    }),
+  )
+  uploadScheduleTicket(
+    @CurrentUser() user: AuthUser,
+    @Param('roomId') roomId: string,
+    @Param('itemId') itemId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadTicketDto,
+  ) {
+    return this.roomsService.uploadScheduleTicket(
+      roomId,
+      user.userId,
+      itemId,
+      file,
+      dto.note,
+    );
+  }
+
+  @Delete(':roomId/schedule/items/:itemId/tickets/:ticketId')
+  @ApiOperation({ summary: '일정 항목 입장권 삭제' })
+  @ApiParam(ROOM_ID)
+  @ApiParam({ name: 'itemId', example: 'item-1' })
+  @ApiParam({
+    name: 'ticketId',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiOkResponse({ type: SuccessDto })
+  deleteScheduleTicket(
+    @CurrentUser() user: AuthUser,
+    @Param('roomId') roomId: string,
+    @Param('itemId') itemId: string,
+    @Param('ticketId') ticketId: string,
+  ) {
+    return this.roomsService.deleteScheduleTicket(
+      roomId,
+      user.userId,
+      itemId,
+      ticketId,
+    );
   }
 
   @Put(':roomId/schedule')

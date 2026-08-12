@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CacheModule } from './common/cache/cache.module';
+import { StorageModule } from './common/storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { QuizModule } from './quiz/quiz.module';
@@ -10,11 +11,13 @@ import { PlacesModule } from './places/places.module';
 import { DestinationsModule } from './destinations/destinations.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { TourModule } from './tour/tour.module';
+import { MobilityModule } from './mobility/mobility.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     CacheModule,
+    StorageModule,
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -29,6 +32,7 @@ import { TourModule } from './tour/tour.module';
     PlacesModule,
     DestinationsModule,
     TourModule,
+    MobilityModule,
   ],
 })
 export class AppModule {}

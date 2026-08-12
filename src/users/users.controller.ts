@@ -1,8 +1,16 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -20,6 +28,7 @@ import {
   PublicUserDto,
   TravelTypeDto,
   TripsSummaryDto,
+  UserListPageDto,
 } from '../common/dto/swagger-responses.dto';
 
 @ApiTags('유저')
@@ -33,10 +42,46 @@ export class UsersController {
     private roomModel: Model<TravelRoomDocument>,
   ) {}
 
+  @Get()
+  @ApiOperation({
+    summary: '회원가입한 유저 목록',
+    description:
+      '전체 회원 PublicUser 목록 (passwordHash/refreshTokens 제외). 기본은 게스트 제외. 초대·궁합 멤버 선택용.',
+  })
+  @ApiQuery({ name: 'page', required: false, example: '1' })
+  @ApiQuery({ name: 'limit', required: false, example: '50', description: '최대 100' })
+  @ApiQuery({
+    name: 'q',
+    required: false,
+    example: '윤지',
+    description: 'nickname / email 부분 검색',
+  })
+  @ApiQuery({
+    name: 'includeGuests',
+    required: false,
+    example: 'false',
+    description: 'true면 게스트 초대 유저 포함',
+  })
+  @ApiOkResponse({ type: UserListPageDto })
+  listUsers(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('q') q?: string,
+    @Query('includeGuests') includeGuests?: string,
+  ) {
+    return this.usersService.listUsers({
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+      q,
+      includeGuests: includeGuests === 'true' || includeGuests === '1',
+    });
+  }
+
   @Get('me')
   @ApiOperation({
-    summary: '내 프로필 + 여행 통계',
-    description: '프로필과 ongoing/completed 여행 수를 함께 반환합니다.',
+    summary: '내 전체 프로필 + 여행 통계',
+    description:
+      '온보딩·퀴즈·성향 축 등 본인 필드 전부 + stats. passwordHash/refreshTokens는 제외.',
   })
   @ApiOkResponse({ type: MeResponseDto })
   async getMe(@CurrentUser() user: AuthUser) {
@@ -53,7 +98,7 @@ export class UsersController {
     });
 
     return {
-      ...this.usersService.toPublicUser(doc),
+      ...this.usersService.toFullUser(doc),
       stats: { ongoingTrips: ongoing, completedTrips: completed },
     };
   }

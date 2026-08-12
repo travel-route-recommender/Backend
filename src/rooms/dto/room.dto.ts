@@ -218,6 +218,17 @@ export class ScheduleItemDto {
   lng?: number;
 }
 
+export class UploadTicketDto {
+  @ApiPropertyOptional({
+    example: '사전 예매 QR',
+    description: '입장권 메모 (multipart form field)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+}
+
 export class UpdateScheduleItemDto {
   @ApiPropertyOptional({ example: '성산일출봉' })
   @IsOptional()

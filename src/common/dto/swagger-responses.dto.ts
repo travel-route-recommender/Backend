@@ -42,6 +42,16 @@ export class PublicUserDto {
   isGuest: boolean;
 }
 
+export class UserListPageDto {
+  @ApiProperty({ type: [PublicUserDto] })
+  data: PublicUserDto[];
+
+  @ApiProperty({
+    example: { total: 42, page: 1, limit: 50 },
+  })
+  meta: { total: number; page: number; limit: number };
+}
+
 export class AuthTokensDto {
   @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIs...' })
   accessToken: string;
@@ -71,7 +81,63 @@ export class MeStatsDto {
   completedTrips: number;
 }
 
-export class MeResponseDto extends PublicUserDto {
+export class PersonalityAxesDto {
+  @ApiProperty({ example: 72 })
+  scheduleDensity: number;
+
+  @ApiProperty({ example: 55 })
+  landmarkNecessity: number;
+
+  @ApiProperty({ example: 40 })
+  localInterest: number;
+
+  @ApiProperty({ example: 80 })
+  challenging: number;
+}
+
+/** 본인 전체 프로필 (비밀 필드 제외) */
+export class FullUserDto extends PublicUserDto {
+  @ApiPropertyOptional({ example: 'kakao', nullable: true })
+  oauthProvider?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '두리 테스트 preference 캐시',
+    example: { transport: 'car', budget: 'mid' },
+  })
+  quizPreferences?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ type: PersonalityAxesDto, nullable: true })
+  personalityAxes?: PersonalityAxesDto | null;
+
+  @ApiPropertyOptional({ example: true, nullable: true })
+  hasLicense?: boolean | null;
+
+  @ApiPropertyOptional({ example: false, nullable: true })
+  hasCar?: boolean | null;
+
+  @ApiProperty({
+    type: String,
+    isArray: true,
+    example: ['STAIRS'],
+    description: 'STAIRS | STEEP_SLOPE | LONG_WALK',
+  })
+  mobilityConstraints: string[];
+
+  @ApiPropertyOptional({ example: 1999, nullable: true })
+  birthYear?: number | null;
+
+  @ApiProperty({ type: String, isArray: true, example: ['카페', '자연'] })
+  interestTags: string[];
+
+  @ApiPropertyOptional({ nullable: true })
+  createdAt?: Date | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  updatedAt?: Date | null;
+}
+
+export class MeResponseDto extends FullUserDto {
   @ApiProperty({ type: MeStatsDto })
   stats: MeStatsDto;
 }
@@ -84,63 +150,96 @@ export class TripsSummaryDto {
   completed: number;
 }
 
-/** DB Place 문서 (Kakao/manual/tour) */
-export class PlaceDto {
-  @ApiProperty({ example: '665abc123def456789012345' })
-  _id: string;
+/** Tour / Kakao / DB 공통 장소 카드 */
+export class CommonPlaceDto {
+  @ApiProperty({
+    example: '665abc123def456789012345',
+    description:
+      '클라이언트 리스트 키. placeId 있으면 그것, 없으면 `{source}:{externalId}`',
+  })
+  id: string;
 
-  @ApiPropertyOptional({ example: '126435' })
-  externalId?: string;
+  @ApiProperty({
+    example: '665abc123def456789012345',
+    nullable: true,
+    description: 'Mongo places._id. Tour 목록(상세 전)은 null. 후보/저장에 사용',
+  })
+  placeId: string | null;
 
-  @ApiProperty({ example: 'tour', enum: ['kakao', 'manual', 'tour'] })
-  source: string;
+  @ApiProperty({
+    example: '126435',
+    description: 'Tour contentId 또는 Kakao place id',
+  })
+  externalId: string;
 
-  @ApiPropertyOptional({ example: 12 })
-  contentTypeId?: number;
+  @ApiProperty({ example: 'tour', enum: ['tour', 'kakao', 'manual'] })
+  source: 'tour' | 'kakao' | 'manual';
 
   @ApiProperty({ example: '성산일출봉' })
   name: string;
 
-  @ApiProperty({ example: '제주특별자치도 서귀포시 성산읍' })
-  address: string;
+  @ApiProperty({
+    example: '제주특별자치도 서귀포시 성산읍',
+    nullable: true,
+  })
+  address: string | null;
 
-  @ApiPropertyOptional({ example: 33.458 })
-  lat?: number;
+  @ApiProperty({ example: 33.458, nullable: true })
+  lat: number | null;
 
-  @ApiPropertyOptional({ example: 126.942 })
-  lng?: number;
+  @ApiProperty({ example: 126.942, nullable: true })
+  lng: number | null;
+
+  @ApiProperty({
+    example: 'http://tong.visitkorea.or.kr/.../thumb.jpg',
+    nullable: true,
+  })
+  thumbnailUrl: string | null;
 
   @ApiProperty({
     type: String,
     isArray: true,
-    example: [
-      'http://tong.visitkorea.or.kr/cms/resource/82/2944282_image2_1.jpg',
-    ],
+    example: ['http://tong.visitkorea.or.kr/.../image.jpg'],
   })
   images: string[];
 
-  @ApiProperty({ example: '유네스코 세계자연유산' })
-  description: string;
+  @ApiProperty({ example: '관광지', nullable: true })
+  category: string | null;
 
   @ApiProperty({
-    type: String,
-    isArray: true,
-    example: ['자연', '바다', '사진스팟'],
+    example: 12,
+    nullable: true,
+    description: 'Tour contentTypeId. Kakao/manual은 null',
   })
+  contentTypeId: number | null;
+
+  @ApiProperty({ example: '관광지', nullable: true })
+  contentTypeLabel: string | null;
+
+  @ApiProperty({ type: String, isArray: true, example: ['자연', '바다'] })
   tags: string[];
 
-  @ApiPropertyOptional({ example: '관광' })
-  category?: string;
+  @ApiProperty({ example: '064-123-4567', nullable: true })
+  phone: string | null;
 
-  @ApiProperty({ example: 100 })
-  popularityScore: number;
+  @ApiProperty({ example: 'https://www.visitjeju.net/...', nullable: true })
+  placeUrl: string | null;
 
-  @ApiPropertyOptional({ example: '064-123-4567' })
-  phone?: string;
+  @ApiProperty({
+    example: '유네스코 세계자연유산',
+    nullable: true,
+  })
+  description: string | null;
 
-  @ApiPropertyOptional({ example: 'https://...' })
-  placeUrl?: string;
+  @ApiPropertyOptional({
+    example: 88.37,
+    description: '주변검색 등에서만. 기준점으로부터 거리(m)',
+  })
+  distanceMeters?: number;
 }
+
+/** @deprecated CommonPlaceDto 사용. 하위호환 별칭 */
+export class PlaceDto extends CommonPlaceDto {}
 
 /** /destinations/popular 응답 예시용 (select 필드만) */
 export class PopularDestinationDto {
@@ -181,8 +280,8 @@ export class PopularDestinationDto {
 }
 
 export class PlaceSearchPageDto {
-  @ApiProperty({ type: [PlaceDto] })
-  data: PlaceDto[];
+  @ApiProperty({ type: [CommonPlaceDto] })
+  data: CommonPlaceDto[];
 
   @ApiProperty({
     example: { total: 20, page: 1, limit: 20 },
@@ -197,8 +296,8 @@ export class SavedPlaceItemDto {
   @ApiProperty()
   savedAt: Date;
 
-  @ApiProperty({ type: PlaceDto })
-  place: PlaceDto;
+  @ApiProperty({ type: CommonPlaceDto })
+  place: CommonPlaceDto;
 }
 
 export class OnboardingStatusDto {
@@ -449,8 +548,39 @@ export class CandidateDto {
   @ApiProperty({ example: false })
   scheduled: boolean;
 
-  @ApiPropertyOptional({ type: PlaceDto })
-  place?: PlaceDto;
+  @ApiPropertyOptional({ type: CommonPlaceDto })
+  place?: CommonPlaceDto;
+}
+
+export class ScheduleTicketDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  id: string;
+
+  @ApiProperty({
+    example: '/uploads/tickets/665abc123def456789012345/a1b2c3d4.jpg',
+    description: '정적 경로. APP_BASE_URL을 앞에 붙여 표시',
+  })
+  imageUrl: string;
+
+  @ApiProperty({ example: '665abc123def456789012345' })
+  uploadedBy: string;
+
+  @ApiPropertyOptional({ example: '사전 예매 QR' })
+  note?: string;
+
+  @ApiPropertyOptional({ example: 'ticket.jpg' })
+  originalName?: string;
+
+  @ApiPropertyOptional({ example: 'image/jpeg' })
+  mimeType?: string;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
+export class ScheduleTicketListDto {
+  @ApiProperty({ type: [ScheduleTicketDto] })
+  tickets: ScheduleTicketDto[];
 }
 
 export class ItineraryItemDto {
@@ -486,6 +616,9 @@ export class ItineraryItemDto {
 
   @ApiPropertyOptional({ example: 126.942 })
   lng?: number;
+
+  @ApiPropertyOptional({ type: [ScheduleTicketDto], default: [] })
+  tickets?: ScheduleTicketDto[];
 }
 
 export class ScheduleDayDto {
@@ -595,8 +728,19 @@ export class AnalysisReportDto {
 
   @ApiProperty({
     example: {
-      totalDistance: 42.5,
-      segments: [{ from: '성산', to: '우도', km: 8 }],
+      totalDistance: 12.4,
+      totalDurationSeconds: 1860,
+      segments: [
+        {
+          from: '성산',
+          to: '우도',
+          status: 'ok',
+          distanceMeters: 8200,
+          durationSeconds: 900,
+          km: 8.2,
+          source: 'kakao-mobility',
+        },
+      ],
       warnings: [],
     },
   })

@@ -13,6 +13,7 @@ import { InvitesController } from './invites.controller';
 import { DuriService } from './duri.service';
 import { DuriController } from './duri.controller';
 import { TourModule } from '../tour/tour.module';
+import { MobilityModule } from '../mobility/mobility.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TourModule } from '../tour/tour.module';
       { name: AnalysisReport.name, schema: AnalysisReportSchema },
     ]),
     TourModule,
+    MobilityModule,
   ],
   providers: [RoomsService, DuriService],
   controllers: [RoomsController, InvitesController, DuriController],

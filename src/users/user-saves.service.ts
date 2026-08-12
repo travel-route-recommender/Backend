@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { UserSave, UserSaveDocument } from '../schemas/user-save.schema';
 import { Place, PlaceDocument } from '../schemas/place.schema';
+import { fromMongoPlace } from '../common/place/common-place';
 
 @Injectable()
 export class UserSavesService {
@@ -49,7 +50,7 @@ export class UserSavesService {
     return saves.map((s) => ({
       id: s._id.toString(),
       savedAt: (s as unknown as { savedAt: Date }).savedAt,
-      place: s.placeId,
+      place: s.placeId ? fromMongoPlace(s.placeId as unknown as PlaceDocument) : null,
     }));
   }
 }

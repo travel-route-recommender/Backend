@@ -129,6 +129,22 @@ const Room = {
   },
 };
 
+const ScheduleTicket = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    imageUrl: {
+      type: 'string',
+      example: '/uploads/tickets/665abc123def456789012345/uuid.jpg',
+    },
+    uploadedBy: { type: 'string' },
+    note: { type: 'string', nullable: true },
+    originalName: { type: 'string', nullable: true },
+    mimeType: { type: 'string', nullable: true },
+    createdAt: { type: 'string', format: 'date-time' },
+  },
+};
+
 const ScheduleItem = {
   type: 'object',
   properties: {
@@ -143,6 +159,7 @@ const ScheduleItem = {
     day: { type: 'number' },
     lat: { type: 'number', nullable: true },
     lng: { type: 'number', nullable: true },
+    tickets: { type: 'array', items: ScheduleTicket },
   },
 };
 
@@ -196,6 +213,56 @@ const doc = {
         type: 'object',
         required: ['refreshToken'],
         properties: { refreshToken: { type: 'string' } },
+      },
+      LatLng: {
+        type: 'object',
+        required: ['lat', 'lng'],
+        properties: {
+          lat: { type: 'number', example: 37.5665 },
+          lng: { type: 'number', example: 126.978 },
+        },
+      },
+      DirectionsRequest: {
+        type: 'object',
+        required: ['origin', 'destination'],
+        properties: {
+          origin: { $ref: '#/components/schemas/LatLng' },
+          destination: { $ref: '#/components/schemas/LatLng' },
+          waypoints: {
+            type: 'array',
+            maxItems: 5,
+            items: { $ref: '#/components/schemas/LatLng' },
+          },
+          priority: {
+            type: 'string',
+            enum: ['RECOMMEND', 'TIME', 'DISTANCE'],
+            default: 'RECOMMEND',
+          },
+          summaryOnly: {
+            type: 'boolean',
+            default: true,
+            description: 'false면 path 좌표 포함',
+          },
+        },
+      },
+      DirectionsResponse: {
+        type: 'object',
+        properties: {
+          distanceMeters: { type: 'integer', example: 4520 },
+          durationSeconds: { type: 'integer', example: 780 },
+          fare: {
+            type: 'object',
+            properties: {
+              taxi: { type: 'integer' },
+              toll: { type: 'integer' },
+            },
+          },
+          path: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/LatLng' },
+          },
+          source: { type: 'string', example: 'kakao-mobility' },
+        },
       },
       CreateRoomDto: {
         type: 'object',
@@ -1020,6 +1087,73 @@ const doc = {
         },
       },
     },
+    '/rooms/{roomId}/schedule/items/{itemId}/tickets': {
+      get: {
+        tags: ['rooms'],
+        security: bearer,
+        parameters: [
+          { name: 'roomId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'itemId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        summary: '일정 항목 입장권 목록',
+        responses: {
+          200: {
+            ...json({
+              type: 'object',
+              properties: {
+                tickets: { type: 'array', items: ScheduleTicket },
+              },
+            }),
+          },
+        },
+      },
+      post: {
+        tags: ['rooms'],
+        security: bearer,
+        parameters: [
+          { name: 'roomId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'itemId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        summary:
+          '입장권 사진 업로드 (multipart). 필드 image 필수, note 선택. jpeg/png/webp/heic ≤5MB, 항목당 10장',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['image'],
+                properties: {
+                  image: { type: 'string', format: 'binary' },
+                  note: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: { 201: { ...json(ScheduleTicket) } },
+      },
+    },
+    '/rooms/{roomId}/schedule/items/{itemId}/tickets/{ticketId}': {
+      delete: {
+        tags: ['rooms'],
+        security: bearer,
+        parameters: [
+          { name: 'roomId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'itemId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'ticketId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        summary: '입장권 삭제',
+        responses: {
+          200: {
+            ...json({
+              type: 'object',
+              properties: { success: { type: 'boolean' } },
+            }),
+          },
+        },
+      },
+    },
     '/rooms/{roomId}/invite-link': {
       get: {
         tags: ['rooms'],
@@ -1369,6 +1503,23 @@ const doc = {
               items: { $ref: '#/components/schemas/TourCodeItem' },
             }),
           },
+        },
+      },
+    },
+    '/mobility/directions': {
+      post: {
+        tags: ['mobility'],
+        summary:
+          '자동차 경로·이동시간 (Kakao Mobility BFF). REST 키 필요. 막차·입장권 미포함',
+        security: bearer,
+        requestBody: {
+          required: true,
+          ...json({ $ref: '#/components/schemas/DirectionsRequest' }),
+        },
+        responses: {
+          200: { ...json({ $ref: '#/components/schemas/DirectionsResponse' }) },
+          401: { ...json(ErrorBody) },
+          503: { ...json(ErrorBody) },
         },
       },
     },

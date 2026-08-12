@@ -8,7 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { PlacesService } from './places.service';
 import {
-  PlaceDto,
+  CommonPlaceDto,
   PlaceSearchPageDto,
 } from '../common/dto/swagger-responses.dto';
 
@@ -23,7 +23,7 @@ export class PlacesController {
     description:
       '**관광지 탐색의 메인이 아닙니다.** 카페·상점 등 관광공사에 없는 POI용입니다.\n\n' +
       '관광지·축제·숙박은 `/tour/places/*` (TourAPI)를 쓰세요.\n\n' +
-      'Kakao Local → DB upsert. Kakao 키 없거나 실패 시 로컬 DB 텍스트 검색으로 fallback.',
+      'Kakao Local → DB upsert 후 **CommonPlace** 형식으로 반환. Kakao 키 없거나 실패 시 로컬 DB 텍스트 검색.',
   })
   @ApiQuery({ name: 'q', required: false, example: '제주 카페' })
   @ApiQuery({ name: 'category', required: false, example: '관광' })
@@ -62,7 +62,7 @@ export class PlacesController {
     example: '665abc123def456789012345',
     description: 'Mongo placeId (ObjectId)',
   })
-  @ApiOkResponse({ type: PlaceDto, isArray: true })
+  @ApiOkResponse({ type: CommonPlaceDto, isArray: true })
   similar(@Param('placeId') placeId: string) {
     return this.placesService.findSimilar(placeId);
   }
@@ -71,7 +71,7 @@ export class PlacesController {
   @ApiOperation({
     summary: '장소 상세 (DB)',
     description:
-      'Mongo `placeId`로 저장된 장소 문서 조회.\n\n' +
+      'Mongo `placeId`로 저장된 장소 조회. **CommonPlace** 형식.\n\n' +
       'TourAPI contentId로 상세를 보려면 `/tour/places/{contentId}`를 쓰세요.',
   })
   @ApiParam({
@@ -79,7 +79,7 @@ export class PlacesController {
     example: '665abc123def456789012345',
     description: 'Mongo placeId (ObjectId)',
   })
-  @ApiOkResponse({ type: PlaceDto })
+  @ApiOkResponse({ type: CommonPlaceDto })
   getOne(@Param('placeId') placeId: string) {
     return this.placesService.findById(placeId);
   }

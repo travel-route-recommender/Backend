@@ -1,3 +1,8 @@
+import {
+  CommonPlace,
+  placeClientId,
+} from '../common/place/common-place';
+
 export const TOUR_CONTENT_TYPE_IDS = [12, 14, 15, 25, 28, 32, 38, 39] as const;
 export type TourContentTypeId = (typeof TOUR_CONTENT_TYPE_IDS)[number];
 
@@ -12,18 +17,8 @@ export const CONTENT_TYPE_LABELS: Record<number, string> = {
   39: '음식점',
 };
 
-export type PlaceCard = {
-  id: string;
-  source: 'TOUR_API';
-  contentTypeId: number;
-  contentTypeLabel: string | null;
-  name: string;
-  address: string | null;
-  thumbnailUrl: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  distanceMeters?: number;
-};
+/** Tour 목록 카드 = 공통 CommonPlace (source: tour) */
+export type PlaceCard = CommonPlace;
 
 export type PlaceImage = {
   url: string;
@@ -32,15 +27,12 @@ export type PlaceImage = {
 };
 
 export type PlaceDetail = PlaceCard & {
-  placeId: string | null;
+  /** Tour 상세 갤러리 (URL+메타). CommonPlace.images는 URL만 */
+  gallery: PlaceImage[];
+  /** @deprecated description과 동일 — 하위호환 */
   overview: string | null;
-  homepage: string | null;
-  tel: string | null;
-  /** KorService2 areacode — 특화 API(areaCd) 매핑용 */
   areaCode: string | null;
-  /** KorService2 sigungucode — 특화 API(signguCd) 매핑용 (코드 체계 다를 수 있음) */
   sigunguCode: string | null;
-  images: PlaceImage[];
   intro: Record<string, unknown>;
   repeatingInfo: Record<string, unknown>[];
 };
@@ -89,17 +81,32 @@ export function extractBodyMeta(data: unknown): {
 }
 
 export function toPlaceCard(raw: Record<string, string>): PlaceCard {
+  const externalId = String(raw.contentid);
   const contentTypeId = Number(raw.contenttypeid);
+  const resolvedTypeId = Number.isFinite(contentTypeId) ? contentTypeId : null;
+  const thumbnailUrl = raw.firstimage2 || raw.firstimage || null;
+  const label = resolvedTypeId
+    ? (CONTENT_TYPE_LABELS[resolvedTypeId] ?? null)
+    : null;
+
   return {
-    id: String(raw.contentid),
-    source: 'TOUR_API',
-    contentTypeId,
-    contentTypeLabel: CONTENT_TYPE_LABELS[contentTypeId] ?? null,
+    id: placeClientId('tour', externalId),
+    placeId: null,
+    externalId,
+    source: 'tour',
     name: raw.title ?? '',
     address: [raw.addr1, raw.addr2].filter(Boolean).join(' ') || null,
-    thumbnailUrl: raw.firstimage2 || raw.firstimage || null,
-    latitude: raw.mapy ? Number(raw.mapy) : null,
-    longitude: raw.mapx ? Number(raw.mapx) : null,
+    lat: raw.mapy ? Number(raw.mapy) : null,
+    lng: raw.mapx ? Number(raw.mapx) : null,
+    thumbnailUrl,
+    images: thumbnailUrl ? [thumbnailUrl] : [],
+    category: label,
+    contentTypeId: resolvedTypeId,
+    contentTypeLabel: label,
+    tags: [],
+    phone: null,
+    placeUrl: null,
+    description: null,
     ...(raw.dist ? { distanceMeters: Number(raw.dist) } : {}),
   };
 }
@@ -201,7 +208,21 @@ export type RelatedPlaceCard = {
   sigunguName: string | null;
   tatsCode: string | null;
   source: 'RELATED_API' | 'NEARBY_FALLBACK';
-} & Partial<Pick<PlaceCard, 'id' | 'contentTypeId' | 'thumbnailUrl' | 'latitude' | 'longitude' | 'address' | 'distanceMeters'>>;
+} & Partial<
+  Pick<
+    PlaceCard,
+    | 'id'
+    | 'externalId'
+    | 'placeId'
+    | 'contentTypeId'
+    | 'contentTypeLabel'
+    | 'thumbnailUrl'
+    | 'lat'
+    | 'lng'
+    | 'address'
+    | 'distanceMeters'
+  >
+>;
 
 export function toRelatedCard(raw: Record<string, string>): RelatedPlaceCard {
   return {
@@ -225,8 +246,8 @@ export type HubPlaceCard = {
   areaName: string | null;
   sigunguName: string | null;
   tatsCode: string | null;
-  latitude: number | null;
-  longitude: number | null;
+  lat: number | null;
+  lng: number | null;
   baseYm: string | null;
 };
 
@@ -239,8 +260,8 @@ export function toHubCard(raw: Record<string, string>): HubPlaceCard {
     areaName: raw.areaNm || null,
     sigunguName: raw.signguNm || null,
     tatsCode: raw.hubTatsCd || null,
-    latitude: raw.mapY ? Number(raw.mapY) : null,
-    longitude: raw.mapX ? Number(raw.mapX) : null,
+    lat: raw.mapY ? Number(raw.mapY) : null,
+    lng: raw.mapX ? Number(raw.mapX) : null,
     baseYm: raw.baseYm || null,
   };
 }

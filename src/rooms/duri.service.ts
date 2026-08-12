@@ -1,19 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   AnalysisReport,
   AnalysisReportDocument,
 } from '../schemas/analysis-report.schema';
+import { Place, PlaceDocument } from '../schemas/place.schema';
+import { MobilityService } from '../mobility/mobility.service';
 import { RoomsService } from './rooms.service';
 import { OptimizeDto, ReplacePlaceDto } from './dto/room.dto';
+
+type Coord = { lat: number; lng: number };
 
 @Injectable()
 export class DuriService {
   constructor(
     @InjectModel(AnalysisReport.name)
     private reportModel: Model<AnalysisReportDocument>,
+    @InjectModel(Place.name)
+    private placeModel: Model<PlaceDocument>,
     private roomsService: RoomsService,
+    private mobilityService: MobilityService,
   ) {}
 
   async generateAnalysisReport(roomId: string, userId: string) {
@@ -21,20 +28,12 @@ export class DuriService {
     const schedule = await this.roomsService.getSchedule(roomId, userId);
     const items = schedule.days.flatMap((d) => d.items);
 
+    const coordsByItemId = await this.resolveItemCoords(items);
+    const routeAnalysis = await this.buildRouteAnalysis(items, coordsByItemId);
+
     const report = await this.reportModel.create({
       roomId,
-      routeAnalysis: {
-        totalDistance: items.length * 2.5,
-        segments: items.map((item, idx) => ({
-          from: items[idx - 1]?.placeName ?? 'start',
-          to: item.placeName,
-          km: 2.5,
-        })),
-        warnings:
-          items.length > 6
-            ? ['하루 일정이 다소 빡빡할 수 있어요.']
-            : [],
-      },
+      routeAnalysis,
       budgetAnalysis: {
         estimated: items.length * 15000,
         breakdown: items.map((i) => ({
@@ -59,12 +58,7 @@ export class DuriService {
         details: [{ area: '카페', matched: true }],
       },
       conflictAnalysis: { overlaps: [], closedVenues: [] },
-      suggestions: [
-        {
-          type: 'reorder',
-          message: '인접한 장소끼리 묶으면 이동 시간을 줄일 수 있어요.',
-        },
-      ],
+      suggestions: this.buildSuggestions(routeAnalysis),
     });
 
     return report;
@@ -151,5 +145,154 @@ export class DuriService {
         },
       ],
     };
+  }
+
+  private async resolveItemCoords(
+    items: Array<{
+      id: string;
+      placeId?: Types.ObjectId;
+      lat?: number;
+      lng?: number;
+    }>,
+  ): Promise<Map<string, Coord>> {
+    const map = new Map<string, Coord>();
+    const missingIds: string[] = [];
+
+    for (const item of items) {
+      if (
+        typeof item.lat === 'number' &&
+        typeof item.lng === 'number' &&
+        Number.isFinite(item.lat) &&
+        Number.isFinite(item.lng)
+      ) {
+        map.set(item.id, { lat: item.lat, lng: item.lng });
+      } else if (item.placeId) {
+        missingIds.push(item.placeId.toString());
+      }
+    }
+
+    if (missingIds.length === 0) return map;
+
+    const places = await this.placeModel
+      .find({ _id: { $in: missingIds } })
+      .select('_id lat lng')
+      .lean();
+    const byId = new Map(
+      places.map((p) => [String(p._id), p] as const),
+    );
+
+    for (const item of items) {
+      if (map.has(item.id) || !item.placeId) continue;
+      const place = byId.get(item.placeId.toString());
+      if (
+        place &&
+        typeof place.lat === 'number' &&
+        typeof place.lng === 'number'
+      ) {
+        map.set(item.id, { lat: place.lat, lng: place.lng });
+      }
+    }
+
+    return map;
+  }
+
+  private async buildRouteAnalysis(
+    items: Array<{ id: string; placeName: string }>,
+    coordsByItemId: Map<string, Coord>,
+  ) {
+    const segments: Record<string, unknown>[] = [];
+    let totalDistanceMeters = 0;
+    let totalDurationSeconds = 0;
+    let unknownCount = 0;
+
+    for (let i = 1; i < items.length; i++) {
+      const from = items[i - 1];
+      const to = items[i];
+      const fromCoord = coordsByItemId.get(from.id);
+      const toCoord = coordsByItemId.get(to.id);
+
+      if (!fromCoord || !toCoord) {
+        unknownCount += 1;
+        segments.push({
+          from: from.placeName,
+          to: to.placeName,
+          status: 'unknown',
+          reason: 'coordinates_missing',
+        });
+        continue;
+      }
+
+      const dir = await this.mobilityService.safeDirections(
+        fromCoord,
+        toCoord,
+      );
+
+      if (!dir) {
+        unknownCount += 1;
+        segments.push({
+          from: from.placeName,
+          to: to.placeName,
+          status: 'unknown',
+          reason: 'directions_unavailable',
+          fromCoord,
+          toCoord,
+        });
+        continue;
+      }
+
+      totalDistanceMeters += dir.distanceMeters;
+      totalDurationSeconds += dir.durationSeconds;
+      segments.push({
+        from: from.placeName,
+        to: to.placeName,
+        status: 'ok',
+        distanceMeters: dir.distanceMeters,
+        durationSeconds: dir.durationSeconds,
+        km: Math.round((dir.distanceMeters / 1000) * 10) / 10,
+        fare: dir.fare,
+        source: dir.source,
+      });
+    }
+
+    const warnings: string[] = [];
+    if (items.length > 6) {
+      warnings.push('하루 일정이 다소 빡빡할 수 있어요.');
+    }
+    if (totalDurationSeconds >= 2 * 60 * 60) {
+      warnings.push(
+        `이동만 약 ${Math.round(totalDurationSeconds / 60)}분 예상돼요. 동선을 줄여보세요.`,
+      );
+    }
+    if (unknownCount > 0) {
+      warnings.push(
+        `${unknownCount}개 구간의 이동시간을 계산하지 못했어요 (좌표 없음 또는 길찾기 실패).`,
+      );
+    }
+
+    return {
+      totalDistance: Math.round((totalDistanceMeters / 1000) * 10) / 10,
+      totalDurationSeconds,
+      segments,
+      warnings,
+    };
+  }
+
+  private buildSuggestions(routeAnalysis: {
+    totalDurationSeconds: number;
+    segments: Record<string, unknown>[];
+  }) {
+    const suggestions: Array<{ type: string; message: string }> = [];
+    if (routeAnalysis.totalDurationSeconds >= 90 * 60) {
+      suggestions.push({
+        type: 'reorder',
+        message: '인접한 장소끼리 묶으면 이동 시간을 줄일 수 있어요.',
+      });
+    } else if (routeAnalysis.segments.length > 0) {
+      suggestions.push({
+        type: 'route',
+        message: '현재 동선 기준으로 이동시간을 계산했어요.',
+      });
+    }
+    return suggestions;
   }
 }

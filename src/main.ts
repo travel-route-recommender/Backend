@@ -1,11 +1,26 @@
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const configService = app.get(ConfigService);
+
+  const uploadDir = join(
+    process.cwd(),
+    configService.get<string>('UPLOAD_DIR', 'uploads'),
+  );
+  if (!existsSync(uploadDir)) {
+    mkdirSync(uploadDir, { recursive: true });
+  }
+  // Images are served outside /api/v1 so imageUrl can be used as-is in <img src>
+  app.useStaticAssets(uploadDir, { prefix: '/uploads' });
 
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new AllExceptionsFilter());
@@ -41,6 +56,7 @@ Tourmate / TripMatch 백엔드 API입니다.
 | 인기 여행지 Top | **인기 여행지** | \`/destinations/popular\` |
 | 여행방·후보·일정 | **여행방** | \`/rooms/*\` |
 | AI 코스 도우미 | **두리 도우미** | \`/rooms/:id/duri/*\` |
+| 자동차 경로·이동시간 | **모빌리티 · 길찾기** | \`/mobility/directions\` |
 
 ---
 
@@ -55,7 +71,10 @@ Tourmate / TripMatch 백엔드 API입니다.
    Kakao Local + 우리 DB. **카페·일반 상점** 등 관광공사에 없는 POI용 **보조**입니다.  
    - 식별자: Mongo \`placeId\` (ObjectId)
 
-여행방 후보 추가 시: \`placeId\` **또는** \`tourContentId\` 중 하나만내면 됩니다.
+여행방 후보 추가 시: \`placeId\` **또는** \`tourContentId\` 중 하나만 내면 됩니다.
+
+**장소 응답은 공통 CommonPlace** (\`placeId\`, \`externalId\`, \`source\`, \`lat\`/\`lng\`, \`thumbnailUrl\` …).  
+Tour 목록·Kakao 검색·후보 \`place\`·저장 목록이 같은 필드를 씁니다.
 
 ---
 
@@ -103,6 +122,10 @@ Tourmate / TripMatch 백엔드 API입니다.
     .addTag('여행방', '방 생성·초대·후보·일정·궁합')
     .addTag('초대', '초대 미리보기 · 기존 유저 초대 수락')
     .addTag('두리 도우미', '장소 추천·일정 초안·분석 리포트 (rule-based MVP)')
+    .addTag(
+      '모빌리티 · 길찾기',
+      'Kakao Mobility 자동차 경로·이동시간 BFF. REST 키 필요. 막차 미포함.',
+    )
     .addTag('저장', '개인 장소 저장(Save) 목록')
     .build();
 

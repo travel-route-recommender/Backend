@@ -5,8 +5,13 @@ export type AnalysisReportDocument = HydratedDocument<AnalysisReport>;
 
 @Schema({ _id: false })
 export class RouteAnalysis {
+  /** 총 이동 거리(km) */
   @Prop({ default: 0 })
   totalDistance: number;
+
+  /** 총 이동 시간(초). Kakao Mobility 기준 */
+  @Prop({ default: 0 })
+  totalDurationSeconds: number;
 
   @Prop({ type: [Object], default: [] })
   segments: Record<string, unknown>[];

@@ -13,6 +13,7 @@ import {
   TravelRoom,
   TravelRoomDocument,
   ItineraryItem,
+  ScheduleTicket,
 } from '../schemas/travel-room.schema';
 import { User, UserDocument } from '../schemas/user.schema';
 import { Place, PlaceDocument } from '../schemas/place.schema';
@@ -38,6 +39,11 @@ import {
   assertValidDay,
   tripDayCount,
 } from './schedule.validation';
+import {
+  LocalUploadService,
+  TICKET_MAX_PER_ITEM,
+} from '../common/storage/local-upload.service';
+import { fromMongoPlace } from '../common/place/common-place';
 
 const generateInviteCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
 
@@ -49,6 +55,7 @@ export class RoomsService {
     @InjectModel(Place.name) private placeModel: Model<PlaceDocument>,
     private config: ConfigService,
     private tourService: TourService,
+    private uploads: LocalUploadService,
   ) {}
 
   private inviteLink(code: string) {
@@ -318,13 +325,16 @@ export class RoomsService {
     const room = await this.getRoomForMember(roomId, userId);
     const placeIds = room.candidatePlaces.map((c) => c.placeId);
     const places = await this.placeModel.find({ _id: { $in: placeIds } });
+    const placeMap = new Map(
+      places.map((p) => [p._id.toString(), fromMongoPlace(p)] as const),
+    );
     return room.candidatePlaces.map((c) => ({
       placeId: c.placeId.toString(),
       addedBy: c.addedBy.toString(),
       addedAt: c.addedAt,
       note: c.note,
       scheduled: c.scheduled,
-      place: places.find((p) => p._id.toString() === c.placeId.toString()),
+      place: placeMap.get(c.placeId.toString()),
     }));
   }
 
@@ -341,7 +351,7 @@ export class RoomsService {
     const allIds = [...new Set(Object.values(grouped).flat())];
     const places = await this.placeModel.find({ _id: { $in: allIds } });
     const placeMap = Object.fromEntries(
-      places.map((p) => [p._id.toString(), p]),
+      places.map((p) => [p._id.toString(), fromMongoPlace(p)]),
     );
 
     const result: Record<string, unknown[]> = {};
@@ -365,7 +375,8 @@ export class RoomsService {
       .filter(([, members]) => members.size >= 2)
       .map(([placeId]) => placeId);
 
-    return this.placeModel.find({ _id: { $in: commonIds } });
+    const places = await this.placeModel.find({ _id: { $in: commonIds } });
+    return places.map((p) => fromMongoPlace(p));
   }
 
   async addCandidate(roomId: string, userId: string, dto: AddCandidateDto) {
@@ -457,6 +468,7 @@ export class RoomsService {
       day,
       lat: dto.lat,
       lng: dto.lng,
+      tickets: [],
     };
     dayPlan.items.push(item);
 
@@ -549,16 +561,101 @@ export class RoomsService {
   async deleteScheduleItem(roomId: string, userId: string, itemId: string) {
     const room = await this.getRoomForMember(roomId, userId);
     for (const day of room.schedule.days) {
-      const before = day.items.length;
+      const removed = day.items.find((i) => i.id === itemId);
+      if (!removed) continue;
+
       day.items = day.items.filter((i) => i.id !== itemId);
-      if (day.items.length < before) {
-        this.syncCandidateScheduledFlags(room);
-        room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
-        await room.save();
-        return { success: true };
-      }
+      await this.deleteTicketFiles(removed.tickets ?? []);
+      this.syncCandidateScheduledFlags(room);
+      room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
+      await room.save();
+      return { success: true };
     }
     throw new NotFoundException('Schedule item not found');
+  }
+
+  async listScheduleTickets(roomId: string, userId: string, itemId: string) {
+    const room = await this.getRoomForMember(roomId, userId);
+    const item = this.findScheduleItem(room, itemId);
+    return {
+      tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t)),
+    };
+  }
+
+  async uploadScheduleTicket(
+    roomId: string,
+    userId: string,
+    itemId: string,
+    file: Express.Multer.File,
+    note?: string,
+  ) {
+    const room = await this.getRoomForMember(roomId, userId);
+    const item = this.findScheduleItem(room, itemId);
+
+    if (!item.tickets) item.tickets = [];
+    if (item.tickets.length >= TICKET_MAX_PER_ITEM) {
+      throw new BadRequestException(
+        `일정 항목당 입장권은 최대 ${TICKET_MAX_PER_ITEM}장까지 업로드할 수 있습니다`,
+      );
+    }
+
+    const saved = await this.uploads.saveTicketImage(roomId, file);
+    const ticket: ScheduleTicket = {
+      id: saved.ticketId,
+      imageUrl: saved.imageUrl,
+      uploadedBy: new Types.ObjectId(userId),
+      note: note?.trim() || undefined,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      createdAt: new Date(),
+    };
+    item.tickets.push(ticket);
+    await room.save();
+    return this.toTicketDto(ticket);
+  }
+
+  async deleteScheduleTicket(
+    roomId: string,
+    userId: string,
+    itemId: string,
+    ticketId: string,
+  ) {
+    const room = await this.getRoomForMember(roomId, userId);
+    const item = this.findScheduleItem(room, itemId);
+    const tickets = item.tickets ?? [];
+    const ticket = tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw new NotFoundException('Ticket not found');
+
+    item.tickets = tickets.filter((t) => t.id !== ticketId);
+    await this.uploads.deleteByPublicUrl(ticket.imageUrl);
+    await room.save();
+    return { success: true };
+  }
+
+  private findScheduleItem(room: TravelRoomDocument, itemId: string) {
+    for (const day of room.schedule.days) {
+      const item = day.items.find((i) => i.id === itemId);
+      if (item) return item;
+    }
+    throw new NotFoundException('Schedule item not found');
+  }
+
+  private toTicketDto(ticket: ScheduleTicket) {
+    return {
+      id: ticket.id,
+      imageUrl: ticket.imageUrl,
+      uploadedBy: ticket.uploadedBy.toString(),
+      note: ticket.note,
+      originalName: ticket.originalName,
+      mimeType: ticket.mimeType,
+      createdAt: ticket.createdAt,
+    };
+  }
+
+  private async deleteTicketFiles(tickets: ScheduleTicket[]) {
+    await Promise.all(
+      tickets.map((t) => this.uploads.deleteByPublicUrl(t.imageUrl)),
+    );
   }
 
   async saveSchedule(roomId: string, userId: string, dto: BatchScheduleDto) {
@@ -584,22 +681,43 @@ export class RoomsService {
       }
     }
 
+    const previousById = new Map(
+      room.schedule.days
+        .flatMap((d) => d.items)
+        .map((item) => [item.id, item] as const),
+    );
+    const nextIds = new Set(
+      dto.days.flatMap((d) =>
+        d.items.map((item) => item.id).filter((id): id is string => !!id),
+      ),
+    );
+    const removedTickets = [...previousById.values()]
+      .filter((item) => !nextIds.has(item.id))
+      .flatMap((item) => item.tickets ?? []);
+
     room.schedule.days = dto.days.map((d) => ({
       day: d.day,
-      items: d.items.map((item) => ({
-        id: item.id ?? `item-${Date.now()}-${Math.random()}`,
-        placeId: item.placeId ? new Types.ObjectId(item.placeId) : undefined,
-        placeName: item.placeName,
-        startTime: item.startTime,
-        endTime: item.endTime,
-        tags: item.tags ?? [],
-        reason: item.reason ?? '',
-        priority: item.priority ?? 'optional',
-        day: d.day,
-        lat: item.lat,
-        lng: item.lng,
-      })),
+      items: d.items.map((item) => {
+        const id = item.id ?? `item-${Date.now()}-${Math.random()}`;
+        const previous = previousById.get(id);
+        return {
+          id,
+          placeId: item.placeId ? new Types.ObjectId(item.placeId) : undefined,
+          placeName: item.placeName,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          tags: item.tags ?? [],
+          reason: item.reason ?? '',
+          priority: item.priority ?? 'optional',
+          day: d.day,
+          lat: item.lat,
+          lng: item.lng,
+          // batch replace does not accept ticket payloads — keep by item id
+          tickets: previous?.tickets ?? [],
+        };
+      }),
     }));
+    await this.deleteTicketFiles(removedTickets);
     this.syncCandidateScheduledFlags(room);
     room.scheduleVersion = currentVersion + 1;
     room.progress = this.computeProgress(room);

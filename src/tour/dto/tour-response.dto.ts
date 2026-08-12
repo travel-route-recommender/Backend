@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CommonPlaceDto } from '../../common/dto/swagger-responses.dto';
 
 /** 목록/검색 공통 페이지 메타 */
 export class TourPageMetaDto {
@@ -12,53 +13,11 @@ export class TourPageMetaDto {
   size: number;
 }
 
-/** 관광지 카드 (목록·검색·주변) */
-export class TourPlaceCardDto {
-  @ApiProperty({
-    example: '126435',
-    description: 'TourAPI contentId. 후보 추가 시 tourContentId로 사용',
-  })
-  id: string;
-
-  @ApiProperty({ example: 'TOUR_API', enum: ['TOUR_API'] })
-  source: 'TOUR_API';
-
-  @ApiProperty({
-    example: 12,
-    description: '12관광지 · 14문화 · 15축제 · 25코스 · 28레포츠 · 32숙박 · 38쇼핑 · 39음식',
-  })
-  contentTypeId: number;
-
-  @ApiProperty({ example: '관광지', nullable: true })
-  contentTypeLabel: string | null;
-
-  @ApiProperty({ example: '성산일출봉 [유네스코 세계자연유산]' })
-  name: string;
-
-  @ApiProperty({
-    example: '제주특별자치도 서귀포시 성산읍 일출로 284-12',
-    nullable: true,
-  })
-  address: string | null;
-
-  @ApiProperty({
-    example: 'http://tong.visitkorea.or.kr/cms/resource/82/2944282_image3_1.bmp',
-    nullable: true,
-  })
-  thumbnailUrl: string | null;
-
-  @ApiProperty({ example: 33.4581111174, nullable: true })
-  latitude: number | null;
-
-  @ApiProperty({ example: 126.9415156012, nullable: true })
-  longitude: number | null;
-
-  @ApiPropertyOptional({
-    example: 88.37,
-    description: 'nearby에서만. 기준 좌표로부터의 거리(m)',
-  })
-  distanceMeters?: number;
-}
+/**
+ * 관광지 카드 = CommonPlace (source: tour).
+ * 후보 추가: placeId 있으면 placeId, 없으면 externalId를 tourContentId로.
+ */
+export class TourPlaceCardDto extends CommonPlaceDto {}
 
 export class TourPlacePageDto {
   @ApiProperty({ type: [TourPlaceCardDto] })
@@ -79,30 +38,20 @@ export class TourPlaceImageDto {
   name?: string;
 }
 
-/** 관광지 상세 */
+/** 관광지 상세 = CommonPlace + Tour 전용 확장 */
 export class TourPlaceDetailDto extends TourPlaceCardDto {
   @ApiProperty({
-    example: '6a54f2edefda6851be3c97a6',
-    nullable: true,
-    description: 'Mongo places _id. 여행방 후보 placeId로 사용',
+    type: [TourPlaceImageDto],
+    description: '원본 갤러리(메타 포함). images[]는 URL만',
   })
-  placeId: string | null;
+  gallery: TourPlaceImageDto[];
 
   @ApiProperty({
     example: '성산일출봉은 제주 동쪽에 위치한 화산 분화구로...',
     nullable: true,
+    description: 'description과 동일 (하위호환)',
   })
   overview: string | null;
-
-  @ApiProperty({
-    example: '<a href="https://www.visitjeju.net/...">...</a>',
-    nullable: true,
-    description: 'HTML anchor가 포함될 수 있음',
-  })
-  homepage: string | null;
-
-  @ApiProperty({ example: '064-123-4567', nullable: true })
-  tel: string | null;
 
   @ApiProperty({
     example: '39',
@@ -118,20 +67,17 @@ export class TourPlaceDetailDto extends TourPlaceCardDto {
   })
   sigunguCode: string | null;
 
-  @ApiProperty({ type: [TourPlaceImageDto] })
-  images: TourPlaceImageDto[];
-
   @ApiProperty({
-    example: { usetime: '09:00~18:00', restdate: '연중무휴' },
-    description: 'contentTypeId별 필드가 다름 (intro JSON)',
+    type: 'object',
+    additionalProperties: true,
+    description: 'detailIntro2 원본 필드 (유형별 상이)',
   })
   intro: Record<string, unknown>;
 
   @ApiProperty({
     type: 'array',
-    items: { type: 'object' },
-    example: [{ infoname: '코스', infotext: '정상까지 약 30분' }],
-    description: '반복정보 (코스 구간, 메뉴 등)',
+    items: { type: 'object', additionalProperties: true },
+    description: 'detailInfo2 반복정보',
   })
   repeatingInfo: Record<string, unknown>[];
 }
@@ -238,11 +184,23 @@ export class TourRelatedPlaceDto {
   })
   source: 'RELATED_API' | 'NEARBY_FALLBACK';
 
-  @ApiPropertyOptional({ example: '126508', description: 'fallback 시 contentId' })
+  @ApiPropertyOptional({
+    example: 'tour:126508',
+    description: 'CommonPlace id (fallback 시)',
+  })
   id?: string;
+
+  @ApiPropertyOptional({ example: '126508', description: 'Tour contentId' })
+  externalId?: string;
 
   @ApiPropertyOptional({ example: 12 })
   contentTypeId?: number;
+
+  @ApiPropertyOptional({ example: 33.45, nullable: true })
+  lat?: number | null;
+
+  @ApiPropertyOptional({ example: 126.94, nullable: true })
+  lng?: number | null;
 
   @ApiPropertyOptional({ example: 6.04, description: 'fallback 시 거리(m)' })
   distanceMeters?: number;
@@ -287,10 +245,10 @@ export class TourHubPlaceDto {
   tatsCode: string | null;
 
   @ApiProperty({ example: 37.579617, nullable: true })
-  latitude: number | null;
+  lat: number | null;
 
   @ApiProperty({ example: 126.977041, nullable: true })
-  longitude: number | null;
+  lng: number | null;
 
   @ApiProperty({ example: '202504', nullable: true })
   baseYm: string | null;
