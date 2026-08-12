@@ -14,6 +14,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { Public } from '../common/decorators/public.decorator';
 import {
   AuthUser,
   CurrentUser,
@@ -42,11 +43,12 @@ export class UsersController {
     private roomModel: Model<TravelRoomDocument>,
   ) {}
 
+  @Public()
   @Get()
   @ApiOperation({
-    summary: '회원가입한 유저 목록',
+    summary: '회원가입한 유저 목록 (인증 불필요)',
     description:
-      '전체 회원 PublicUser 목록 (passwordHash/refreshTokens 제외). 기본은 게스트 제외. 초대·궁합 멤버 선택용.',
+      '전체 회원 PublicUser 목록. Bearer 없이 호출 가능. passwordHash/refreshTokens 제외. 기본은 게스트 제외.',
   })
   @ApiQuery({ name: 'page', required: false, example: '1' })
   @ApiQuery({ name: 'limit', required: false, example: '50', description: '최대 100' })

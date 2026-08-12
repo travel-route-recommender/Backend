@@ -259,7 +259,7 @@ PublicUser & {
 
 ### GET `/users` (회원가입한 유저 목록)
 
-Bearer 필요. PublicUser 배열 (타인 상세/비밀번호 제외).
+**인증 불필요.** PublicUser 배열 (passwordHash/refreshTokens 제외).
 
 | Query | 기본 | 설명 |
 |-------|------|------|

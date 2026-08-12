@@ -81,7 +81,7 @@ TripMatch / Tourmate **메인 REST API 서버**
 
 | 이름 | 상태 | Method | Path | 인증 | description |
 |------|------|--------|------|------|-------------|
-| 유저 목록 | 완료 | GET | `/users` | ✅ Bearer | 전체 회원 PublicUser · page/limit/q |
+| 유저 목록 | 완료 | GET | `/users` | ❌ | 전체 회원 PublicUser · page/limit/q · 인증 불필요 |
 | 내 프로필 | 완료 | GET | `/users/me` | ✅ Bearer | 전체 필드 + ongoing/completed 여행 수 |
 | TravelType 조회 | 완료 | GET | `/users/me/travel-type` | ✅ Bearer | 두리 테스트 결과 |
 | 여행 통계 | 완료 | GET | `/users/me/trips-summary` | ✅ Bearer | ongoing / completed count |
