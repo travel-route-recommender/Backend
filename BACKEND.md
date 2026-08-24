@@ -180,6 +180,16 @@ TripMatch / Tourmate **메인 REST API 서버**
 | 입장권 업로드 | 완료 | POST | `/rooms/:roomId/schedule/items/:itemId/tickets` | ✅ Bearer | multipart `image` · `/uploads` |
 | 입장권 삭제 | 완료 | DELETE | `/rooms/:roomId/schedule/items/:itemId/tickets/:ticketId` | ✅ Bearer | |
 | batch 저장 | 완료 | PUT | `/rooms/:roomId/schedule` | ✅ Bearer | days[] 일괄 · tickets는 item id로 유지 |
+| 잠금 | 완료 | PATCH | `/rooms/:roomId/schedule/items/:itemId/lock` | ✅ Bearer | expectedVersion |
+| 확정 예약 | 완료 | PUT/DELETE | `/rooms/:roomId/schedule/items/:itemId/reservation` | ✅ Bearer | |
+| 계획 앵커 | 완료 | GET/PATCH | `/rooms/:roomId/planning` | ✅ Bearer | 숙소·복귀·timezone·버퍼 |
+| 여행 날짜 원자 변경 | 완료 | PATCH | `/rooms/:roomId/trip-dates` | ✅ Bearer | 날짜+일정 한 커밋 |
+| 제안 적용 | 완료 | POST | `/rooms/:roomId/schedule/apply` | ✅ Bearer | factsVersion 선택 |
+| 분석 기준 | 완료 | GET | `/rooms/:roomId/analysis-baseline` | ✅ Bearer | |
+| 성향 공유 | 완료 | GET | `/rooms/:roomId/preferences` | ✅ Bearer | 파생값만 |
+| 제약 새로고침 | 완료 | POST | `/rooms/:roomId/preferences/refresh-constraints` | ✅ Bearer | |
+| 후보 선호 신호 | 완료 | PUT | `/rooms/:roomId/candidates/:placeId/signals` | ✅ Bearer | |
+| 공유 TODO | 완료 | GET/POST/PATCH/DELETE | `/rooms/:roomId/todos` | ✅ Bearer | revision |
 | priority 로직 | 시작 전 | — | — | — | must/optional/skip 필드만 저장 |
 
 ### Invites
@@ -202,7 +212,8 @@ TripMatch / Tourmate **메인 REST API 서버**
 | 분석 리포트 생성 | MVP | POST | `/rooms/:roomId/duri/analysis-report` | ✅ Bearer | Kakao Mobility로 segment 거리·시간 채움 |
 | 최신 리포트 | 완료 | GET | `/rooms/:roomId/duri/analysis-report/latest` | ✅ Bearer | |
 | 자동차 길찾기 | 완료 | POST | `/mobility/directions` | ✅ Bearer | REST 키 · 막차 미포함 |
-| 막차시간 | 시작 전 | — | — | — | Kakao Map 범위 밖 · Phase 2 |
+| 대중교통·막차 | MVP | POST | `/mobility/transit` | ✅ Bearer | stub `available:false` |
+| 알림 | MVP | GET/POST | `/notifications` | ✅ Bearer | stub 빈 목록 |
 | LLM 두리 | 시작 전 | — | — | — | Phase 3 |
 | WebSocket 협업 | 시작 전 | — | — | — | Phase 3 |
 

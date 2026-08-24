@@ -587,16 +587,16 @@ export class ItineraryItemDto {
   @ApiProperty({ example: 'item-1' })
   id: string;
 
-  @ApiPropertyOptional()
-  placeId?: string;
+  @ApiPropertyOptional({ nullable: true })
+  placeId?: string | null;
 
   @ApiProperty({ example: '성산일출봉' })
   placeName: string;
 
-  @ApiProperty({ example: '09:00' })
+  @ApiProperty({ example: '09:10', description: 'HH:mm — 분 단위 그대로 보존' })
   startTime: string;
 
-  @ApiProperty({ example: '11:00' })
+  @ApiProperty({ example: '10:05' })
   endTime: string;
 
   @ApiProperty({ example: ['자연'] })
@@ -611,14 +611,32 @@ export class ItineraryItemDto {
   @ApiProperty({ example: 1 })
   day: number;
 
-  @ApiPropertyOptional({ example: 33.458 })
-  lat?: number;
+  @ApiPropertyOptional({ example: '2026-07-10', nullable: true })
+  date?: string | null;
 
-  @ApiPropertyOptional({ example: 126.942 })
-  lng?: number;
+  @ApiPropertyOptional({ example: 33.458, nullable: true })
+  lat?: number | null;
+
+  @ApiPropertyOptional({ example: 126.942, nullable: true })
+  lng?: number | null;
+
+  @ApiProperty({ example: false })
+  locked: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  lockedBy?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  lockedAt?: Date | null;
 
   @ApiPropertyOptional({ type: [ScheduleTicketDto], default: [] })
   tickets?: ScheduleTicketDto[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '사용자 확인 예약 (구조화). 이미지 티켓과 별개',
+  })
+  reservation?: Record<string, unknown> | null;
 }
 
 export class ScheduleDayDto {
@@ -632,6 +650,12 @@ export class ScheduleDayDto {
 export class RoomScheduleDto {
   @ApiProperty({ type: [ScheduleDayDto] })
   days: ScheduleDayDto[];
+
+  @ApiProperty({ example: 3 })
+  scheduleVersion: number;
+
+  @ApiPropertyOptional({ description: '숙소·복귀·이동수단·버퍼·timezone' })
+  planning?: Record<string, unknown>;
 }
 
 export class MatchResultDto {

@@ -14,19 +14,26 @@ import {
   TravelRoomDocument,
   ItineraryItem,
   ScheduleTicket,
+  ConfirmedReservation,
 } from '../schemas/travel-room.schema';
 import { User, UserDocument } from '../schemas/user.schema';
 import { Place, PlaceDocument } from '../schemas/place.schema';
 import {
   AddCandidateDto,
+  ApplyScheduleProposalDto,
   BatchScheduleDto,
   CreateFromCompatibilityDto,
   CreateRoomDto,
+  LockScheduleItemDto,
   ReorderScheduleDto,
   ScheduleItemDto,
   UpdateDestinationDto,
+  UpdatePlanningDto,
   UpdateRoomDto,
   UpdateScheduleItemDto,
+  UpdateTripDatesDto,
+  UpsertCandidateSignalDto,
+  UpsertReservationDto,
 } from './dto/room.dto';
 import {
   buildAdjustmentPlan,
@@ -35,8 +42,11 @@ import {
 } from '../quiz/quiz.data';
 import { TourService } from '../tour/tour.service';
 import {
+  assertNoOverlap,
   assertTimeRange,
-  assertValidDay,
+  dateToDay,
+  dayToDate,
+  resolveItemDayAndDate,
   tripDayCount,
 } from './schedule.validation';
 import {
@@ -44,6 +54,17 @@ import {
   TICKET_MAX_PER_ITEM,
 } from '../common/storage/local-upload.service';
 import { fromMongoPlace } from '../common/place/common-place';
+import {
+  assertNotLocked,
+  fromAnchorDto,
+  planningSnapshot,
+  scheduleConflict,
+  serializeScheduleItem,
+  setVersionedValue,
+  ticketsForPlaceChange,
+  toReservationDto,
+} from './schedule.helpers';
+import { RoomTodosService } from './room-todos.service';
 
 const generateInviteCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
 
@@ -56,6 +77,7 @@ export class RoomsService {
     private config: ConfigService,
     private tourService: TourService,
     private uploads: LocalUploadService,
+    private todosService: RoomTodosService,
   ) {}
 
   private inviteLink(code: string) {
@@ -138,9 +160,12 @@ export class RoomsService {
           role: 'owner',
           joinedAt: new Date(),
           travelTypeSnapshot: user?.travelType,
+          mobilityConstraints: this.snapshotConstraints(user),
+          preferenceUpdatedAt: user?.personalityAxes ? new Date() : undefined,
         },
       ],
       progress: { label: '시작 전', currentStep: 0, percent: 0 },
+      factsVersion: 0,
     });
 
     return this.formatRoom(room);
@@ -161,7 +186,10 @@ export class RoomsService {
         role: u._id.toString() === userId ? 'owner' : 'member',
         joinedAt: new Date(),
         travelTypeSnapshot: u.travelType,
+        mobilityConstraints: this.snapshotConstraints(u),
+        preferenceUpdatedAt: u.personalityAxes ? new Date() : undefined,
       })),
+      factsVersion: 0,
     });
 
     return this.formatRoom(room);
@@ -237,10 +265,33 @@ export class RoomsService {
       role: 'member',
       joinedAt: new Date(),
       travelTypeSnapshot: user?.travelType,
+      mobilityConstraints: this.snapshotConstraints(user),
+      preferenceUpdatedAt: user?.personalityAxes ? new Date() : undefined,
     });
+    room.factsVersion = (room.factsVersion ?? 0) + 1;
     room.progress = this.computeProgress(room);
     await room.save();
     return this.formatRoom(room);
+  }
+
+  private snapshotConstraints(user: UserDocument | null | undefined) {
+    if (!user) {
+      return {
+        values: [] as string[],
+        status: 'missing' as const,
+        source: 'user',
+        version: 1,
+        updatedAt: new Date(),
+      };
+    }
+    const values = user.mobilityConstraints ?? [];
+    return {
+      values,
+      status: (values.length ? 'present' : 'missing') as 'present' | 'missing',
+      source: 'user',
+      version: 1,
+      updatedAt: new Date(),
+    };
   }
 
   /** 초대 링크 미리보기 (비인증, 읽기 전용) */
@@ -407,7 +458,9 @@ export class RoomsService {
         addedAt: new Date(),
         note: dto.note,
         scheduled: false,
+        memberSignals: [],
       });
+      room.factsVersion = (room.factsVersion ?? 0) + 1;
       room.progress = this.computeProgress(room);
       await room.save();
     }
@@ -431,88 +484,243 @@ export class RoomsService {
   async getSchedule(roomId: string, userId: string) {
     const room = await this.getRoomForMember(roomId, userId);
     return {
-      ...room.schedule,
+      days: (room.schedule.days ?? []).map((d) => ({
+        day: d.day,
+        items: d.items.map((i) => serializeScheduleItem(i)),
+      })),
       scheduleVersion: room.scheduleVersion ?? 0,
+      planning: planningSnapshot(room),
     };
   }
 
   async getScheduleMap(roomId: string, userId: string) {
     const room = await this.getRoomForMember(roomId, userId);
     const items = room.schedule.days.flatMap((d) =>
-      d.items.map((item) => ({ ...item, day: d.day })),
+      d.items.map((item) => ({ ...serializeScheduleItem(item), day: d.day })),
     );
-    return { items, scheduleVersion: room.scheduleVersion ?? 0 };
+    return {
+      items,
+      scheduleVersion: room.scheduleVersion ?? 0,
+      planning: planningSnapshot(room),
+    };
+  }
+
+  /**
+   * Conditional schedule commit: membership + expectedVersion in filter.
+   * Side-effect file deletes run only after successful write.
+   */
+  private async commitScheduleMutation(opts: {
+    roomId: string;
+    userId: string;
+    expectedVersion: number;
+    clientMutationId?: string;
+    extraSet?: Record<string, unknown>;
+    mutate: (
+      room: TravelRoomDocument,
+    ) => Promise<{ result?: any; filesToDelete?: string[] } | void> | {
+      result?: any;
+      filesToDelete?: string[];
+    } | void;
+  }) {
+    const room = await this.getRoomForMember(opts.roomId, opts.userId);
+    const currentVersion = room.scheduleVersion ?? 0;
+
+    if (
+      opts.clientMutationId &&
+      room.lastScheduleMutationId === opts.clientMutationId
+    ) {
+      return {
+        idempotent: true,
+        scheduleVersion: currentVersion,
+        result: undefined,
+        schedule: {
+          days: room.schedule.days.map((d) => ({
+            day: d.day,
+            items: d.items.map((i) => serializeScheduleItem(i)),
+          })),
+        },
+      };
+    }
+
+    if (opts.expectedVersion !== currentVersion) {
+      throw scheduleConflict(currentVersion, opts.expectedVersion);
+    }
+
+    const side = (await opts.mutate(room)) ?? {};
+    const nextVersion = currentVersion + 1;
+    room.scheduleVersion = nextVersion;
+    room.progress = this.computeProgress(room);
+    if (opts.clientMutationId) {
+      room.lastScheduleMutationId = opts.clientMutationId;
+    }
+
+    const updated = await this.roomModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(opts.roomId),
+        'members.userId': new Types.ObjectId(opts.userId),
+        scheduleVersion: currentVersion,
+      },
+      {
+        $set: {
+          schedule: room.schedule,
+          scheduleVersion: nextVersion,
+          progress: room.progress,
+          candidatePlaces: room.candidatePlaces,
+          ...(opts.clientMutationId
+            ? { lastScheduleMutationId: opts.clientMutationId }
+            : {}),
+          ...(opts.extraSet ?? {}),
+        },
+      },
+      { new: true },
+    );
+
+    if (!updated) {
+      const latest = await this.roomModel
+        .findById(opts.roomId)
+        .select('scheduleVersion');
+      throw scheduleConflict(
+        latest?.scheduleVersion ?? currentVersion,
+        opts.expectedVersion,
+      );
+    }
+
+    if (side.filesToDelete?.length) {
+      await Promise.all(
+        side.filesToDelete.map((url) => this.uploads.deleteByPublicUrl(url)),
+      );
+    }
+
+    return {
+      idempotent: false,
+      scheduleVersion: nextVersion,
+      result: side.result,
+      room: updated,
+    };
+  }
+
+  private assertDayOverlaps(room: TravelRoomDocument, day: number) {
+    const dayPlan = room.schedule.days.find((d) => d.day === day);
+    if (!dayPlan) return;
+    assertNoOverlap(
+      dayPlan.items.map((i) => ({
+        id: i.id,
+        startTime: i.startTime,
+        endTime: i.endTime,
+      })),
+    );
   }
 
   async addScheduleItem(roomId: string, userId: string, dto: ScheduleItemDto) {
-    const room = await this.getRoomForMember(roomId, userId);
     assertTimeRange(dto.startTime, dto.endTime);
-    const day = dto.day ?? 1;
-    assertValidDay(day, room.startDate, room.endDate);
 
-    let dayPlan = room.schedule.days.find((d) => d.day === day);
-    if (!dayPlan) {
-      dayPlan = { day, items: [] };
-      room.schedule.days.push(dayPlan);
-    }
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      mutate: (room) => {
+        const { day, date } = resolveItemDayAndDate({
+          day: dto.day,
+          date: dto.date,
+          startDate: room.startDate,
+          endDate: room.endDate,
+        });
 
-    const item: ItineraryItem = {
-      id: dto.id ?? `item-${Date.now()}`,
-      placeId: dto.placeId ? new Types.ObjectId(dto.placeId) : undefined,
-      placeName: dto.placeName,
-      startTime: dto.startTime,
-      endTime: dto.endTime,
-      tags: dto.tags ?? [],
-      reason: dto.reason ?? '',
-      priority: dto.priority ?? 'optional',
-      day,
-      lat: dto.lat,
-      lng: dto.lng,
-      tickets: [],
+        const allIds = new Set(
+          room.schedule.days.flatMap((d) => d.items.map((i) => i.id)),
+        );
+        const id = dto.id ?? `item-${Date.now()}`;
+        if (allIds.has(id)) {
+          throw new BadRequestException(`일정 id 중복: ${id}`);
+        }
+
+        let dayPlan = room.schedule.days.find((d) => d.day === day);
+        if (!dayPlan) {
+          dayPlan = { day, items: [] };
+          room.schedule.days.push(dayPlan);
+        }
+
+        const item: ItineraryItem = {
+          id,
+          placeId: dto.placeId ? new Types.ObjectId(dto.placeId) : undefined,
+          placeName: dto.placeName,
+          startTime: dto.startTime,
+          endTime: dto.endTime,
+          tags: dto.tags ?? [],
+          reason: dto.reason ?? '',
+          priority: dto.priority ?? 'optional',
+          day,
+          date,
+          lat: dto.lat,
+          lng: dto.lng,
+          locked: false,
+          tickets: [],
+        };
+        dayPlan.items.push(item);
+        this.assertDayOverlaps(room, day);
+        if (dto.placeId) this.syncCandidateScheduledFlags(room);
+        return { result: serializeScheduleItem(item) };
+      },
+    });
+
+    return {
+      ...committed.result,
+      scheduleVersion: committed.scheduleVersion,
     };
-    dayPlan.items.push(item);
-
-    if (dto.placeId) {
-      this.syncCandidateScheduledFlags(room);
-    }
-
-    room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
-    room.progress = this.computeProgress(room);
-    await room.save();
-    return item;
   }
 
-  async reorderSchedule(roomId: string, userId: string, dto: ReorderScheduleDto) {
-    const room = await this.getRoomForMember(roomId, userId);
-    const dayPlan = room.schedule.days.find((d) => d.day === dto.day);
-    if (!dayPlan) throw new NotFoundException('Day not found');
+  async reorderSchedule(
+    roomId: string,
+    userId: string,
+    dto: ReorderScheduleDto,
+  ) {
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      mutate: (room) => {
+        const dayPlan = room.schedule.days.find((d) => d.day === dto.day);
+        if (!dayPlan) throw new NotFoundException('Day not found');
 
-    const existingIds = dayPlan.items.map((i) => i.id);
-    const incoming = dto.itemIds;
+        const existingIds = dayPlan.items.map((i) => i.id);
+        const incoming = dto.itemIds;
+        if (incoming.length !== existingIds.length) {
+          throw new BadRequestException(
+            `reorder는 해당 day의 모든 item id를 포함해야 합니다. 기대 ${existingIds.length}개, 전달 ${incoming.length}개`,
+          );
+        }
+        const existingSet = new Set(existingIds);
+        const incomingSet = new Set(incoming);
+        if (
+          existingSet.size !== incomingSet.size ||
+          [...existingSet].some((id) => !incomingSet.has(id))
+        ) {
+          throw new BadRequestException(
+            'reorder itemIds는 기존 일정 id의 exact permutation이어야 합니다.',
+          );
+        }
 
-    if (incoming.length !== existingIds.length) {
-      throw new BadRequestException(
-        `reorder는 해당 day의 모든 item id를 포함해야 합니다. 기대 ${existingIds.length}개, 전달 ${incoming.length}개`,
-      );
-    }
+        for (const item of dayPlan.items) {
+          assertNotLocked(item);
+        }
 
-    const existingSet = new Set(existingIds);
-    const incomingSet = new Set(incoming);
-    if (
-      existingSet.size !== incomingSet.size ||
-      [...existingSet].some((id) => !incomingSet.has(id))
-    ) {
-      throw new BadRequestException(
-        'reorder itemIds는 기존 일정 id의 exact permutation이어야 합니다.',
-      );
-    }
+        const map = new Map(dayPlan.items.map((i) => [i.id, i]));
+        dayPlan.items = incoming.map((id) => map.get(id)!) as ItineraryItem[];
+        return {
+          result: {
+            day: dayPlan.day,
+            items: dayPlan.items.map((i) => serializeScheduleItem(i)),
+          },
+        };
+      },
+    });
 
-    const map = new Map(dayPlan.items.map((i) => [i.id, i]));
-    dayPlan.items = incoming.map((id) => map.get(id)!) as ItineraryItem[];
-
-    room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
-    await room.save();
-    return { ...dayPlan, scheduleVersion: room.scheduleVersion };
+    return {
+      ...committed.result,
+      scheduleVersion: committed.scheduleVersion,
+    };
   }
 
   async updateScheduleItem(
@@ -521,57 +729,247 @@ export class RoomsService {
     itemId: string,
     dto: UpdateScheduleItemDto,
   ) {
-    const room = await this.getRoomForMember(roomId, userId);
-    for (const day of room.schedule.days) {
-      const item = day.items.find((i) => i.id === itemId);
-      if (item) {
-        const nextStart = dto.startTime ?? item.startTime;
-        const nextEnd = dto.endTime ?? item.endTime;
-        assertTimeRange(nextStart, nextEnd);
-
-        if (dto.day != null) {
-          assertValidDay(dto.day, room.startDate, room.endDate);
-        }
-
-        if (dto.placeName != null) item.placeName = dto.placeName;
-        if (dto.startTime != null) item.startTime = dto.startTime;
-        if (dto.endTime != null) item.endTime = dto.endTime;
-        if (dto.reason != null) item.reason = dto.reason;
-        if (dto.priority != null) item.priority = dto.priority;
-
-        if (dto.day != null && dto.day !== day.day) {
-          day.items = day.items.filter((i) => i.id !== itemId);
-          item.day = dto.day;
-          let target = room.schedule.days.find((d) => d.day === dto.day);
-          if (!target) {
-            target = { day: dto.day, items: [] };
-            room.schedule.days.push(target);
-          }
-          target.items.push(item);
-        }
-
-        room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
-        await room.save();
-        return item;
-      }
+    if (dto.startTime != null || dto.endTime != null) {
+      // validated after merge inside mutate
     }
-    throw new NotFoundException('Schedule item not found');
+
+    let filesToDelete: string[] = [];
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      mutate: (room) => {
+        for (const day of room.schedule.days) {
+          const item = day.items.find((i) => i.id === itemId);
+          if (!item) continue;
+
+          assertNotLocked(item, { unlock: dto.unlock });
+
+          const nextStart = dto.startTime ?? item.startTime;
+          const nextEnd = dto.endTime ?? item.endTime;
+          assertTimeRange(nextStart, nextEnd);
+
+          const moved =
+            dto.day != null ||
+            dto.date != null ||
+            dto.startTime != null ||
+            dto.endTime != null ||
+            dto.placeId !== undefined;
+
+          if (item.locked && moved && dto.unlock) {
+            item.locked = false;
+            item.lockedBy = undefined;
+            item.lockedAt = undefined;
+          }
+
+          if (dto.placeName != null) item.placeName = dto.placeName;
+          if (dto.startTime != null) item.startTime = dto.startTime;
+          if (dto.endTime != null) item.endTime = dto.endTime;
+          if (dto.reason != null) item.reason = dto.reason;
+          if (dto.priority != null) item.priority = dto.priority;
+          if (dto.lat != null) item.lat = dto.lat;
+          if (dto.lng != null) item.lng = dto.lng;
+
+          if (dto.placeId !== undefined) {
+            const nextPlaceId =
+              dto.placeId === null || dto.placeId === ''
+                ? undefined
+                : new Types.ObjectId(dto.placeId);
+            const cleared = ticketsForPlaceChange(item, nextPlaceId);
+            filesToDelete = cleared.filesToDelete;
+            item.tickets = cleared.tickets;
+            if (cleared.filesToDelete.length) {
+              item.reservation = undefined;
+            }
+            item.placeId = nextPlaceId;
+          }
+
+          let targetDay = day.day;
+          if (dto.day != null || dto.date != null) {
+            const resolved = resolveItemDayAndDate({
+              day: dto.day ?? item.day,
+              date: dto.date ?? item.date,
+              startDate: room.startDate,
+              endDate: room.endDate,
+            });
+            targetDay = resolved.day;
+            item.day = resolved.day;
+            item.date = resolved.date;
+          }
+
+          if (targetDay !== day.day) {
+            day.items = day.items.filter((i) => i.id !== itemId);
+            let target = room.schedule.days.find((d) => d.day === targetDay);
+            if (!target) {
+              target = { day: targetDay, items: [] };
+              room.schedule.days.push(target);
+            }
+            target.items.push(item);
+            this.assertDayOverlaps(room, day.day);
+            this.assertDayOverlaps(room, targetDay);
+          } else {
+            this.assertDayOverlaps(room, day.day);
+          }
+
+          this.syncCandidateScheduledFlags(room);
+          return {
+            result: serializeScheduleItem(item),
+            filesToDelete,
+          };
+        }
+        throw new NotFoundException('Schedule item not found');
+      },
+    });
+
+    return {
+      ...committed.result,
+      scheduleVersion: committed.scheduleVersion,
+    };
   }
 
-  async deleteScheduleItem(roomId: string, userId: string, itemId: string) {
-    const room = await this.getRoomForMember(roomId, userId);
-    for (const day of room.schedule.days) {
-      const removed = day.items.find((i) => i.id === itemId);
-      if (!removed) continue;
+  async deleteScheduleItem(
+    roomId: string,
+    userId: string,
+    itemId: string,
+    expectedVersion: number,
+    clientMutationId?: string,
+    unlock?: boolean,
+  ) {
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion,
+      clientMutationId,
+      mutate: (room) => {
+        for (const day of room.schedule.days) {
+          const removed = day.items.find((i) => i.id === itemId);
+          if (!removed) continue;
+          assertNotLocked(removed, { unlock });
+          day.items = day.items.filter((i) => i.id !== itemId);
+          this.syncCandidateScheduledFlags(room);
+          return {
+            result: { success: true },
+            filesToDelete: (removed.tickets ?? []).map((t) => t.imageUrl),
+          };
+        }
+        throw new NotFoundException('Schedule item not found');
+      },
+    });
+    const linkImpact = await this.todosService.detachScheduleItem(
+      roomId,
+      itemId,
+    );
+    return {
+      success: true,
+      scheduleVersion: committed.scheduleVersion,
+      todoLinkImpact: linkImpact,
+    };
+  }
 
-      day.items = day.items.filter((i) => i.id !== itemId);
-      await this.deleteTicketFiles(removed.tickets ?? []);
-      this.syncCandidateScheduledFlags(room);
-      room.scheduleVersion = (room.scheduleVersion ?? 0) + 1;
-      await room.save();
-      return { success: true };
-    }
-    throw new NotFoundException('Schedule item not found');
+  async setScheduleItemLock(
+    roomId: string,
+    userId: string,
+    itemId: string,
+    dto: LockScheduleItemDto,
+  ) {
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      mutate: (room) => {
+        const item = this.findScheduleItem(room, itemId);
+        item.locked = dto.locked;
+        if (dto.locked) {
+          item.lockedBy = new Types.ObjectId(userId);
+          item.lockedAt = new Date();
+        } else {
+          item.lockedBy = undefined;
+          item.lockedAt = undefined;
+        }
+        return { result: serializeScheduleItem(item) };
+      },
+    });
+    return {
+      ...committed.result,
+      scheduleVersion: committed.scheduleVersion,
+    };
+  }
+
+  async upsertReservation(
+    roomId: string,
+    userId: string,
+    itemId: string,
+    dto: UpsertReservationDto,
+  ) {
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      mutate: (room) => {
+        const item = this.findScheduleItem(room, itemId);
+        const prev = item.reservation;
+        const now = new Date();
+        const status = dto.status ?? prev?.status ?? 'unconfirmed';
+        const reservation: ConfirmedReservation = {
+          id: prev?.id ?? `res-${Date.now()}`,
+          status,
+          date: dto.date ?? prev?.date,
+          startTime: dto.startTime ?? prev?.startTime,
+          endTime: dto.endTime ?? prev?.endTime,
+          timeWindowStart: dto.timeWindowStart ?? prev?.timeWindowStart,
+          timeWindowEnd: dto.timeWindowEnd ?? prev?.timeWindowEnd,
+          timezone:
+            dto.timezone ?? prev?.timezone ?? room.timezone ?? 'Asia/Seoul',
+          placeId: dto.placeId
+            ? new Types.ObjectId(dto.placeId)
+            : prev?.placeId,
+          externalId: dto.externalId ?? prev?.externalId,
+          confirmationCode: dto.confirmationCode ?? prev?.confirmationCode,
+          note: dto.note ?? prev?.note,
+          documentTicketIds:
+            dto.documentTicketIds ?? prev?.documentTicketIds ?? [],
+          confirmedBy:
+            status === 'confirmed'
+              ? new Types.ObjectId(userId)
+              : prev?.confirmedBy,
+          confirmedAt: status === 'confirmed' ? now : prev?.confirmedAt,
+          revision: (prev?.revision ?? 0) + 1,
+        };
+        item.reservation = reservation;
+        return { result: toReservationDto(reservation) };
+      },
+    });
+    return {
+      reservation: committed.result,
+      scheduleVersion: committed.scheduleVersion,
+    };
+  }
+
+  async deleteReservation(
+    roomId: string,
+    userId: string,
+    itemId: string,
+    expectedVersion: number,
+    clientMutationId?: string,
+  ) {
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion,
+      clientMutationId,
+      mutate: (room) => {
+        const item = this.findScheduleItem(room, itemId);
+        if (!item.reservation) {
+          throw new NotFoundException('Reservation not found');
+        }
+        item.reservation = undefined;
+        return { result: { success: true } };
+      },
+    });
+    return { success: true, scheduleVersion: committed.scheduleVersion };
   }
 
   async listScheduleTickets(roomId: string, userId: string, itemId: string) {
@@ -579,6 +977,7 @@ export class RoomsService {
     const item = this.findScheduleItem(room, itemId);
     return {
       tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t)),
+      scheduleVersion: room.scheduleVersion ?? 0,
     };
   }
 
@@ -587,31 +986,71 @@ export class RoomsService {
     userId: string,
     itemId: string,
     file: Express.Multer.File,
-    note?: string,
+    note: string | undefined,
+    expectedVersion: number,
+    clientMutationId?: string,
   ) {
+    // Pre-check membership/version before writing file
     const room = await this.getRoomForMember(roomId, userId);
-    const item = this.findScheduleItem(room, itemId);
-
-    if (!item.tickets) item.tickets = [];
-    if (item.tickets.length >= TICKET_MAX_PER_ITEM) {
+    const currentVersion = room.scheduleVersion ?? 0;
+    if (
+      clientMutationId &&
+      room.lastScheduleMutationId === clientMutationId
+    ) {
+      const item = this.findScheduleItem(room, itemId);
+      return {
+        idempotent: true,
+        scheduleVersion: currentVersion,
+        tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t)),
+      };
+    }
+    if (expectedVersion !== currentVersion) {
+      throw scheduleConflict(currentVersion, expectedVersion);
+    }
+    const itemPre = this.findScheduleItem(room, itemId);
+    if ((itemPre.tickets ?? []).length >= TICKET_MAX_PER_ITEM) {
       throw new BadRequestException(
         `일정 항목당 입장권은 최대 ${TICKET_MAX_PER_ITEM}장까지 업로드할 수 있습니다`,
       );
     }
 
     const saved = await this.uploads.saveTicketImage(roomId, file);
-    const ticket: ScheduleTicket = {
-      id: saved.ticketId,
-      imageUrl: saved.imageUrl,
-      uploadedBy: new Types.ObjectId(userId),
-      note: note?.trim() || undefined,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      createdAt: new Date(),
-    };
-    item.tickets.push(ticket);
-    await room.save();
-    return this.toTicketDto(ticket);
+    try {
+      const committed = await this.commitScheduleMutation({
+        roomId,
+        userId,
+        expectedVersion,
+        clientMutationId,
+        mutate: (r) => {
+          const item = this.findScheduleItem(r, itemId);
+          if (!item.tickets) item.tickets = [];
+          if (item.tickets.length >= TICKET_MAX_PER_ITEM) {
+            throw new BadRequestException(
+              `일정 항목당 입장권은 최대 ${TICKET_MAX_PER_ITEM}장까지 업로드할 수 있습니다`,
+            );
+          }
+          const ticket: ScheduleTicket = {
+            id: saved.ticketId,
+            imageUrl: saved.imageUrl,
+            uploadedBy: new Types.ObjectId(userId),
+            note: note?.trim() || undefined,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            createdAt: new Date(),
+          };
+          item.tickets.push(ticket);
+          return { result: this.toTicketDto(ticket) };
+        },
+      });
+      return {
+        ...committed.result,
+        scheduleVersion: committed.scheduleVersion,
+      };
+    } catch (err) {
+      // conflict/fail after file write → remove orphan of this request
+      await this.uploads.deleteByPublicUrl(saved.imageUrl);
+      throw err;
+    }
   }
 
   async deleteScheduleTicket(
@@ -619,17 +1058,27 @@ export class RoomsService {
     userId: string,
     itemId: string,
     ticketId: string,
+    expectedVersion: number,
+    clientMutationId?: string,
   ) {
-    const room = await this.getRoomForMember(roomId, userId);
-    const item = this.findScheduleItem(room, itemId);
-    const tickets = item.tickets ?? [];
-    const ticket = tickets.find((t) => t.id === ticketId);
-    if (!ticket) throw new NotFoundException('Ticket not found');
-
-    item.tickets = tickets.filter((t) => t.id !== ticketId);
-    await this.uploads.deleteByPublicUrl(ticket.imageUrl);
-    await room.save();
-    return { success: true };
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion,
+      clientMutationId,
+      mutate: (room) => {
+        const item = this.findScheduleItem(room, itemId);
+        const tickets = item.tickets ?? [];
+        const ticket = tickets.find((t) => t.id === ticketId);
+        if (!ticket) throw new NotFoundException('Ticket not found');
+        item.tickets = tickets.filter((t) => t.id !== ticketId);
+        return {
+          result: { success: true },
+          filesToDelete: [ticket.imageUrl],
+        };
+      },
+    });
+    return { success: true, scheduleVersion: committed.scheduleVersion };
   }
 
   private findScheduleItem(room: TravelRoomDocument, itemId: string) {
@@ -652,80 +1101,191 @@ export class RoomsService {
     };
   }
 
-  private async deleteTicketFiles(tickets: ScheduleTicket[]) {
-    await Promise.all(
-      tickets.map((t) => this.uploads.deleteByPublicUrl(t.imageUrl)),
-    );
+  async saveSchedule(roomId: string, userId: string, dto: BatchScheduleDto) {
+    const filesToDelete: string[] = [];
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      mutate: (room) => {
+        for (const d of dto.days) {
+          for (const item of d.items) {
+            assertTimeRange(item.startTime, item.endTime);
+          }
+        }
+
+        const previousById = new Map(
+          room.schedule.days
+            .flatMap((d) => d.items)
+            .map((item) => [item.id, item] as const),
+        );
+
+        // Locked items must remain unless unlock via same payload locked:false
+        for (const [id, prev] of previousById) {
+          if (!prev.locked) continue;
+          const next = dto.days
+            .flatMap((d) => d.items)
+            .find((i) => i.id === id);
+          if (!next) {
+            throw new ForbiddenException({
+              code: 'SCHEDULE_ITEM_LOCKED',
+              message: `잠긴 일정 ${id}는 batch에서 삭제할 수 없습니다.`,
+              itemId: id,
+            });
+          }
+          const nextDay = next.day ?? dto.days.find((d) =>
+            d.items.some((i) => i.id === id),
+          )?.day;
+          const timeChanged =
+            next.startTime !== prev.startTime ||
+            next.endTime !== prev.endTime ||
+            nextDay !== prev.day;
+          const placeChanged =
+            (next.placeId ?? null) !== (prev.placeId?.toString() ?? null);
+          if (
+            (timeChanged || placeChanged) &&
+            next.locked !== false
+          ) {
+            throw new ForbiddenException({
+              code: 'SCHEDULE_ITEM_LOCKED',
+              message: `잠긴 일정 ${id}는 이동·리사이즈·장소 교체할 수 없습니다.`,
+              itemId: id,
+            });
+          }
+        }
+
+        const nextIds = new Set(
+          dto.days.flatMap((d) =>
+            d.items.map((item) => item.id).filter((id): id is string => !!id),
+          ),
+        );
+        for (const [id, prev] of previousById) {
+          if (!nextIds.has(id)) {
+            filesToDelete.push(...(prev.tickets ?? []).map((t) => t.imageUrl));
+          }
+        }
+
+        room.schedule.days = dto.days.map((d) => ({
+          day: d.day,
+          items: d.items.map((item) => {
+            const resolved = resolveItemDayAndDate({
+              day: item.day ?? d.day,
+              date: item.date,
+              startDate: room.startDate,
+              endDate: room.endDate,
+            });
+            const id = item.id ?? `item-${Date.now()}-${Math.random()}`;
+            const previous = previousById.get(id);
+            const nextPlaceId = item.placeId
+              ? new Types.ObjectId(item.placeId)
+              : undefined;
+            const ticketCarry = ticketsForPlaceChange(previous, nextPlaceId);
+            filesToDelete.push(...ticketCarry.filesToDelete);
+
+            const locked =
+              item.locked === false
+                ? false
+                : item.locked === true
+                  ? true
+                  : (previous?.locked ?? false);
+
+            return {
+              id,
+              placeId: nextPlaceId,
+              placeName: item.placeName,
+              startTime: item.startTime,
+              endTime: item.endTime,
+              tags: item.tags ?? [],
+              reason: item.reason ?? '',
+              priority: item.priority ?? 'optional',
+              day: resolved.day,
+              date: resolved.date,
+              lat: item.lat,
+              lng: item.lng,
+              locked,
+              lockedBy: locked ? previous?.lockedBy : undefined,
+              lockedAt: locked ? previous?.lockedAt : undefined,
+              tickets: ticketCarry.tickets,
+              reservation: ticketCarry.filesToDelete.length
+                ? undefined
+                : previous?.reservation,
+            } as ItineraryItem;
+          }),
+        }));
+
+        for (const d of room.schedule.days) {
+          this.assertDayOverlaps(room, d.day);
+        }
+        this.syncCandidateScheduledFlags(room);
+        return {
+          result: {
+            days: room.schedule.days.map((d) => ({
+              day: d.day,
+              items: d.items.map((i) => serializeScheduleItem(i)),
+            })),
+          },
+          filesToDelete,
+        };
+      },
+    });
+
+    const roomDoc =
+      committed.room ?? (await this.getRoomForMember(roomId, userId));
+    return {
+      ...committed.result,
+      scheduleVersion: committed.scheduleVersion,
+      planning: planningSnapshot(roomDoc),
+    };
   }
 
-  async saveSchedule(roomId: string, userId: string, dto: BatchScheduleDto) {
+  async updatePlanning(
+    roomId: string,
+    userId: string,
+    dto: UpdatePlanningDto,
+  ) {
     const room = await this.getRoomForMember(roomId, userId);
-    const currentVersion = room.scheduleVersion ?? 0;
-
-    if (
-      dto.expectedVersion != null &&
-      dto.expectedVersion !== currentVersion
-    ) {
-      throw new ConflictException({
-        message:
-          '일정이 다른 멤버에 의해 먼저 수정되었습니다. 최신 일정을 다시 불러온 뒤 저장하세요.',
-        currentVersion,
-        expectedVersion: dto.expectedVersion,
-      });
+    if (dto.timezone != null) room.timezone = dto.timezone;
+    if (dto.lodging !== undefined) {
+      room.lodging = fromAnchorDto(dto.lodging ?? undefined);
     }
-
-    for (const d of dto.days) {
-      assertValidDay(d.day, room.startDate, room.endDate);
-      for (const item of d.items) {
-        assertTimeRange(item.startTime, item.endTime);
-      }
+    if (dto.returnPoint !== undefined) {
+      room.returnPoint = fromAnchorDto(dto.returnPoint ?? undefined);
     }
-
-    const previousById = new Map(
-      room.schedule.days
-        .flatMap((d) => d.items)
-        .map((item) => [item.id, item] as const),
-    );
-    const nextIds = new Set(
-      dto.days.flatMap((d) =>
-        d.items.map((item) => item.id).filter((id): id is string => !!id),
-      ),
-    );
-    const removedTickets = [...previousById.values()]
-      .filter((item) => !nextIds.has(item.id))
-      .flatMap((item) => item.tickets ?? []);
-
-    room.schedule.days = dto.days.map((d) => ({
-      day: d.day,
-      items: d.items.map((item) => {
-        const id = item.id ?? `item-${Date.now()}-${Math.random()}`;
-        const previous = previousById.get(id);
-        return {
-          id,
-          placeId: item.placeId ? new Types.ObjectId(item.placeId) : undefined,
-          placeName: item.placeName,
-          startTime: item.startTime,
-          endTime: item.endTime,
-          tags: item.tags ?? [],
-          reason: item.reason ?? '',
-          priority: item.priority ?? 'optional',
-          day: d.day,
-          lat: item.lat,
-          lng: item.lng,
-          // batch replace does not accept ticket payloads — keep by item id
-          tickets: previous?.tickets ?? [],
-        };
-      }),
-    }));
-    await this.deleteTicketFiles(removedTickets);
-    this.syncCandidateScheduledFlags(room);
-    room.scheduleVersion = currentVersion + 1;
-    room.progress = this.computeProgress(room);
+    if (dto.transportMode != null) {
+      room.transportMode = setVersionedValue(
+        room.transportMode,
+        dto.transportMode,
+        userId,
+        dto.confirm,
+      );
+    }
+    if (dto.returnDeadline != null) {
+      room.returnDeadline = setVersionedValue(
+        room.returnDeadline,
+        dto.returnDeadline,
+        userId,
+        dto.confirm,
+      );
+    }
+    if (dto.travelBufferMinutes != null) {
+      room.travelBufferMinutes = setVersionedValue(
+        room.travelBufferMinutes,
+        dto.travelBufferMinutes,
+        userId,
+        dto.confirm,
+      );
+    }
+    if (dto.prepBufferMinutes != null) {
+      room.prepBufferMinutes = setVersionedValue(
+        room.prepBufferMinutes,
+        dto.prepBufferMinutes,
+        userId,
+        dto.confirm,
+      );
+    }
     await room.save();
-    return {
-      ...room.schedule,
-      scheduleVersion: room.scheduleVersion,
-    };
+    return planningSnapshot(room);
   }
 
   /** Keep candidate.scheduled in sync with schedule placeIds. */
@@ -800,6 +1360,340 @@ export class RoomsService {
     return { selectedCourseId: courseId };
   }
 
+  async getAnalysisBaseline(roomId: string, userId: string) {
+    const room = await this.getRoomForMember(roomId, userId);
+    return {
+      scheduleVersion: room.scheduleVersion ?? 0,
+      factsVersion: room.factsVersion ?? 0,
+      timezone: room.timezone ?? 'Asia/Seoul',
+      startDate: room.startDate ?? null,
+      endDate: room.endDate ?? null,
+      planning: planningSnapshot(room),
+    };
+  }
+
+  async updateTripDates(
+    roomId: string,
+    userId: string,
+    dto: UpdateTripDatesDto,
+  ) {
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (endDate < startDate) {
+      throw new BadRequestException('endDate는 startDate 이후여야 합니다');
+    }
+
+    const filesToDelete: string[] = [];
+    const detached: string[] = [];
+
+    const committed = await this.commitScheduleMutation({
+      roomId,
+      userId,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+      extraSet: { startDate, endDate },
+      mutate: (room) => {
+        room.startDate = startDate;
+        room.endDate = endDate;
+
+        const actions = new Map(
+          (dto.itemActions ?? []).map((a) => [a.itemId, a]),
+        );
+        const allItems = room.schedule.days.flatMap((d) =>
+          d.items.map((item) => ({ day: d.day, item })),
+        );
+
+        for (const { item } of allItems) {
+          const action = actions.get(item.id);
+          if (!action || action.action === 'keep') {
+            // re-validate day against new span; re-derive date from day
+            const max = tripDayCount(startDate, endDate)!;
+            if (item.day > max) {
+              throw new BadRequestException({
+                code: 'ITEM_OUT_OF_RANGE',
+                message: `일정 ${item.id}의 day=${item.day}가 새 여행 기간(1~${max})을 벗어납니다. itemActions로 move/delete 하세요.`,
+                itemId: item.id,
+              });
+            }
+            if (item.locked && action?.unlock) {
+              item.locked = false;
+              item.lockedBy = undefined;
+              item.lockedAt = undefined;
+            }
+            item.date = dayToDate(startDate, item.day);
+            continue;
+          }
+
+          assertNotLocked(item, { unlock: action.unlock });
+          if (action.unlock) {
+            item.locked = false;
+            item.lockedBy = undefined;
+            item.lockedAt = undefined;
+          }
+
+          if (action.action === 'delete') {
+            filesToDelete.push(
+              ...(item.tickets ?? []).map((t) => t.imageUrl),
+            );
+            detached.push(item.id);
+            for (const day of room.schedule.days) {
+              day.items = day.items.filter((i) => i.id !== item.id);
+            }
+            continue;
+          }
+
+          // move
+          const resolved = resolveItemDayAndDate({
+            day: action.day,
+            date: action.date,
+            startDate,
+            endDate,
+          });
+          // remove from old day
+          for (const day of room.schedule.days) {
+            day.items = day.items.filter((i) => i.id !== item.id);
+          }
+          item.day = resolved.day;
+          item.date = resolved.date;
+          let target = room.schedule.days.find((d) => d.day === resolved.day);
+          if (!target) {
+            target = { day: resolved.day, items: [] };
+            room.schedule.days.push(target);
+          }
+          target.items.push(item);
+        }
+
+        // drop empty days, validate overlaps
+        room.schedule.days = room.schedule.days.filter(
+          (d) => d.items.length > 0,
+        );
+        for (const d of room.schedule.days) {
+          this.assertDayOverlaps(room, d.day);
+        }
+        this.syncCandidateScheduledFlags(room);
+        return {
+          result: {
+            startDate,
+            endDate,
+            days: room.schedule.days.map((d) => ({
+              day: d.day,
+              items: d.items.map((i) => serializeScheduleItem(i)),
+            })),
+          },
+          filesToDelete,
+        };
+      },
+    });
+
+    const linkImpacts = [];
+    for (const id of detached) {
+      linkImpacts.push(await this.todosService.detachScheduleItem(roomId, id));
+    }
+
+    return {
+      ...committed.result,
+      scheduleVersion: committed.scheduleVersion,
+      todoLinkImpacts: linkImpacts,
+    };
+  }
+
+  async applyScheduleProposal(
+    roomId: string,
+    userId: string,
+    dto: ApplyScheduleProposalDto,
+  ) {
+    const roomPeek = await this.getRoomForMember(roomId, userId);
+    if (
+      dto.expectedFactsVersion != null &&
+      dto.expectedFactsVersion !== (roomPeek.factsVersion ?? 0)
+    ) {
+      throw new ConflictException({
+        code: 'FACTS_VERSION_CONFLICT',
+        message: '분석 기준 데이터가 변경되었습니다. 다시 분석하세요.',
+        currentFactsVersion: roomPeek.factsVersion ?? 0,
+        expectedFactsVersion: dto.expectedFactsVersion,
+      });
+    }
+
+    // Reuse batch save with lock/reservation checks
+    return this.saveSchedule(roomId, userId, {
+      days: dto.days,
+      expectedVersion: dto.expectedVersion,
+      clientMutationId: dto.clientMutationId,
+    });
+  }
+
+  async getMemberPreferences(roomId: string, userId: string) {
+    const room = await this.getRoomForMember(roomId, userId);
+    const memberIds = room.members.map((m) => m.userId);
+    const users = await this.userModel.find({ _id: { $in: memberIds } });
+    const byId = new Map(users.map((u) => [u._id.toString(), u]));
+
+    const members = room.members.map((m) => {
+      const uid = m.userId.toString();
+      const user = byId.get(uid);
+      const axes = user?.personalityAxes;
+      const constraints = m.mobilityConstraints ?? {
+        values: user?.mobilityConstraints ?? [],
+        status: user?.mobilityConstraints?.length ? 'present' : 'missing',
+        source: 'user',
+        version: 1,
+        updatedAt: null,
+      };
+
+      return {
+        userId: uid,
+        nickname: user?.nickname ?? null,
+        travelType: m.travelTypeSnapshot
+          ? {
+              name: m.travelTypeSnapshot.name,
+              tags: m.travelTypeSnapshot.tags,
+              emoji: m.travelTypeSnapshot.emoji,
+            }
+          : null,
+        // derived only — never raw quiz answers
+        personalityAxes: axes
+          ? {
+              scheduleDensity: {
+                value: axes.scheduleDensity,
+                unit: 'score',
+                range: [0, 100],
+                resolution: 1,
+                source: 'quiz',
+                method: 'rule-based-4axis',
+              },
+              landmarkNecessity: {
+                value: axes.landmarkNecessity,
+                unit: 'score',
+                range: [0, 100],
+                resolution: 1,
+                source: 'quiz',
+                method: 'rule-based-4axis',
+              },
+              localInterest: {
+                value: axes.localInterest,
+                unit: 'score',
+                range: [0, 100],
+                resolution: 1,
+                source: 'quiz',
+                method: 'rule-based-4axis',
+              },
+              challenging: {
+                value: axes.challenging,
+                unit: 'score',
+                range: [0, 100],
+                resolution: 1,
+                source: 'quiz',
+                method: 'rule-based-4axis',
+              },
+            }
+          : null,
+        mobilityConstraints: {
+          values: constraints.values ?? [],
+          status: constraints.status ?? 'missing',
+          source: constraints.source ?? 'user',
+          version: constraints.version ?? 1,
+          updatedAt: constraints.updatedAt ?? null,
+          // missing/stale ≠ "no constraints"
+        },
+        preferenceUpdatedAt: m.preferenceUpdatedAt ?? null,
+        interestTags: user?.interestTags ?? [],
+      };
+    });
+
+    const candidateSignals = room.candidatePlaces.map((c) => ({
+      placeId: c.placeId.toString(),
+      signals: (c.memberSignals ?? []).map((s) => ({
+        userId: s.userId.toString(),
+        mustVisit: s.mustVisit ?? null,
+        avoid: s.avoid ?? null,
+        preferenceStrength:
+          s.preferenceStrength === undefined ? null : s.preferenceStrength,
+        version: s.version ?? 1,
+        updatedAt: s.updatedAt ?? null,
+      })),
+    }));
+
+    return {
+      factsVersion: room.factsVersion ?? 0,
+      scheduleVersion: room.scheduleVersion ?? 0,
+      members,
+      candidateSignals,
+    };
+  }
+
+  async upsertCandidateSignal(
+    roomId: string,
+    userId: string,
+    placeId: string,
+    dto: UpsertCandidateSignalDto,
+  ) {
+    const room = await this.getRoomForMember(roomId, userId);
+    const candidate = room.candidatePlaces.find(
+      (c) => c.placeId.toString() === placeId,
+    );
+    if (!candidate) throw new NotFoundException('Candidate not found');
+    if (!candidate.memberSignals) candidate.memberSignals = [];
+
+    let signal = candidate.memberSignals.find(
+      (s) => s.userId.toString() === userId,
+    );
+    if (!signal) {
+      signal = {
+        userId: new Types.ObjectId(userId),
+        version: 0,
+        updatedAt: new Date(),
+      };
+      candidate.memberSignals.push(signal);
+    }
+    if (dto.mustVisit !== undefined) signal.mustVisit = dto.mustVisit;
+    if (dto.avoid !== undefined) signal.avoid = dto.avoid;
+    if (dto.preferenceStrength !== undefined) {
+      signal.preferenceStrength = dto.preferenceStrength;
+    }
+    signal.version = (signal.version ?? 0) + 1;
+    signal.updatedAt = new Date();
+    room.factsVersion = (room.factsVersion ?? 0) + 1;
+    await room.save();
+
+    return {
+      placeId,
+      signal: {
+        userId,
+        mustVisit: signal.mustVisit ?? null,
+        avoid: signal.avoid ?? null,
+        preferenceStrength:
+          signal.preferenceStrength === undefined
+            ? null
+            : signal.preferenceStrength,
+        version: signal.version,
+        updatedAt: signal.updatedAt,
+      },
+      factsVersion: room.factsVersion,
+    };
+  }
+
+  async refreshMyConstraints(roomId: string, userId: string) {
+    const room = await this.getRoomForMember(roomId, userId);
+    const user = await this.userModel.findById(userId);
+    const member = room.members.find((m) => m.userId.toString() === userId)!;
+    const prev = member.mobilityConstraints;
+    member.mobilityConstraints = {
+      values: user?.mobilityConstraints ?? [],
+      status: user?.mobilityConstraints?.length ? 'present' : 'missing',
+      source: 'user',
+      version: (prev?.version ?? 0) + 1,
+      updatedAt: new Date(),
+    };
+    member.preferenceUpdatedAt = new Date();
+    room.factsVersion = (room.factsVersion ?? 0) + 1;
+    await room.save();
+    return {
+      mobilityConstraints: member.mobilityConstraints,
+      factsVersion: room.factsVersion,
+    };
+  }
+
   private formatRoom(room: TravelRoomDocument) {
     const progress = this.computeProgress(room);
     return {
@@ -815,6 +1709,14 @@ export class RoomsService {
         role: m.role,
         joinedAt: m.joinedAt,
         travelTypeSnapshot: m.travelTypeSnapshot,
+        mobilityConstraints: m.mobilityConstraints
+          ? {
+              values: m.mobilityConstraints.values,
+              status: m.mobilityConstraints.status,
+              version: m.mobilityConstraints.version,
+              updatedAt: m.mobilityConstraints.updatedAt ?? null,
+            }
+          : null,
       })),
       inviteCode: room.inviteCode,
       inviteLink: room.inviteLink,
@@ -827,6 +1729,8 @@ export class RoomsService {
         0,
       ),
       scheduleVersion: room.scheduleVersion ?? 0,
+      factsVersion: room.factsVersion ?? 0,
+      planning: planningSnapshot(room),
     };
   }
 }
