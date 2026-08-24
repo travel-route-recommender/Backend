@@ -14,6 +14,11 @@ import {
   TodoLink,
 } from '../schemas/room-todo.schema';
 import {
+  assertRoomMember,
+  assertTodoMutator,
+  requireRoom,
+} from './room-access';
+import {
   TravelRoom,
   TravelRoomDocument,
 } from '../schemas/travel-room.schema';
@@ -33,10 +38,8 @@ export class RoomTodosService {
   ) {}
 
   private async getRoomForMember(roomId: string, userId: string) {
-    const room = await this.roomModel.findById(roomId);
-    if (!room) throw new NotFoundException('Room not found');
-    const member = room.members.find((m) => m.userId.toString() === userId);
-    if (!member) throw new ForbiddenException('Not a room member');
+    const room = requireRoom(await this.roomModel.findById(roomId));
+    const member = assertRoomMember(room, userId);
     return { room, role: member.role as 'owner' | 'member' };
   }
 
@@ -292,6 +295,7 @@ export class RoomTodosService {
       roomId: room._id,
     });
     if (!todo) throw new NotFoundException('Todo not found');
+    assertTodoMutator(room, userId, todo);
 
     if (
       dto.clientMutationId &&
@@ -384,6 +388,7 @@ export class RoomTodosService {
       roomId: room._id,
     });
     if (!todo) throw new NotFoundException('Todo not found');
+    assertTodoMutator(room, userId, todo);
     if (expectedRevision !== (todo.revision ?? 1)) {
       throw this.todoConflict(todo, expectedRevision);
     }
@@ -508,5 +513,36 @@ export class RoomTodosService {
       modified: res.modifiedCount,
       scheduleItemId,
     };
+  }
+
+  /**
+   * System/auto TODO upsert with dedupe. Does not overwrite user-edited items.
+   */
+  async ensureAutoTodo(
+    roomId: string,
+    userId: string,
+    opts: {
+      title: string;
+      description?: string;
+      dedupeKey: string;
+      kind?: 'duriAnalysis' | 'ocrConfirm' | 'scheduleChange';
+      cause?: string;
+      baseRevision?: string;
+      priority?: 'low' | 'medium' | 'high' | 'urgent';
+      links?: TodoLinkDto[];
+    },
+  ) {
+    return this.create(roomId, userId, {
+      title: opts.title,
+      description: opts.description,
+      priority: opts.priority ?? 'high',
+      links: opts.links,
+      source: {
+        kind: opts.kind ?? 'scheduleChange',
+        dedupeKey: opts.dedupeKey,
+        cause: opts.cause,
+        baseRevision: opts.baseRevision,
+      },
+    });
   }
 }

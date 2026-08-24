@@ -15,6 +15,12 @@ import { DuriService } from './duri.service';
 import { DuriController } from './duri.controller';
 import { RoomTodosService } from './room-todos.service';
 import { RoomTodosController } from './room-todos.controller';
+import { RoomDocumentsService } from './room-documents.service';
+import { RoomDocumentsController } from './room-documents.controller';
+import {
+  RoomDocumentFile,
+  RoomDocumentFileSchema,
+} from '../schemas/room-document.schema';
 import { TourModule } from '../tour/tour.module';
 import { MobilityModule } from '../mobility/mobility.module';
 
@@ -26,17 +32,24 @@ import { MobilityModule } from '../mobility/mobility.module';
       { name: Place.name, schema: PlaceSchema },
       { name: AnalysisReport.name, schema: AnalysisReportSchema },
       { name: RoomTodo.name, schema: RoomTodoSchema },
+      { name: RoomDocumentFile.name, schema: RoomDocumentFileSchema },
     ]),
     TourModule,
     MobilityModule,
   ],
-  providers: [RoomsService, DuriService, RoomTodosService],
+  providers: [
+    RoomsService,
+    DuriService,
+    RoomTodosService,
+    RoomDocumentsService,
+  ],
   controllers: [
     RoomsController,
     InvitesController,
     DuriController,
     RoomTodosController,
+    RoomDocumentsController,
   ],
-  exports: [RoomsService, RoomTodosService],
+  exports: [RoomsService, RoomTodosService, RoomDocumentsService],
 })
 export class RoomsModule {}

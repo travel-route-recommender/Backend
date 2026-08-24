@@ -65,6 +65,12 @@ import {
   toReservationDto,
 } from './schedule.helpers';
 import { RoomTodosService } from './room-todos.service';
+import { SignedUrlService } from '../common/storage/signed-url.service';
+import {
+  assertRoomMember,
+  assertRoomOwner,
+  requireRoom,
+} from './room-access';
 
 const generateInviteCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 8);
 
@@ -78,6 +84,7 @@ export class RoomsService {
     private tourService: TourService,
     private uploads: LocalUploadService,
     private todosService: RoomTodosService,
+    private signedUrls: SignedUrlService,
   ) {}
 
   private inviteLink(code: string) {
@@ -86,14 +93,14 @@ export class RoomsService {
   }
 
   private async getRoomForMember(roomId: string, userId: string) {
-    const room = await this.roomModel.findById(roomId);
-    if (!room) throw new NotFoundException('Room not found');
+    const room = requireRoom(await this.roomModel.findById(roomId));
+    assertRoomMember(room, userId);
+    return room;
+  }
 
-    const isMember = room.members.some(
-      (m) => m.userId.toString() === userId,
-    );
-    if (!isMember) throw new ForbiddenException('Not a room member');
-
+  private async getRoomForOwner(roomId: string, userId: string) {
+    const room = requireRoom(await this.roomModel.findById(roomId));
+    assertRoomOwner(room, userId);
     return room;
   }
 
@@ -216,7 +223,7 @@ export class RoomsService {
   }
 
   async updateRoom(roomId: string, userId: string, dto: UpdateRoomDto) {
-    const room = await this.getRoomForMember(roomId, userId);
+    const room = await this.getRoomForOwner(roomId, userId);
     if (dto.title) room.title = dto.title;
     if (dto.startDate) room.startDate = new Date(dto.startDate);
     if (dto.endDate) room.endDate = new Date(dto.endDate);
@@ -227,7 +234,7 @@ export class RoomsService {
   }
 
   async updateDestination(roomId: string, userId: string, dto: UpdateDestinationDto) {
-    const room = await this.getRoomForMember(roomId, userId);
+    const room = await this.getRoomForOwner(roomId, userId);
     room.destination = dto;
     room.progress = this.computeProgress(room);
     await room.save();
@@ -235,11 +242,7 @@ export class RoomsService {
   }
 
   async regenerateInvite(roomId: string, userId: string) {
-    const room = await this.getRoomForMember(roomId, userId);
-    const owner = room.members.find((m) => m.role === 'owner');
-    if (owner?.userId.toString() !== userId) {
-      throw new ForbiddenException('Only owner can regenerate invite');
-    }
+    const room = await this.getRoomForOwner(roomId, userId);
 
     room.inviteCode = generateInviteCode();
     room.inviteLink = this.inviteLink(room.inviteCode);
@@ -664,6 +667,28 @@ export class RoomsService {
       },
     });
 
+    if ((dto.priority ?? 'optional') === 'must') {
+      const itemId = committed.result.id as string;
+      await this.todosService.ensureAutoTodo(roomId, userId, {
+        title: `예약·입장권 확인: ${dto.placeName}`,
+        description:
+          '필수 일정입니다. 확정 예약 시각과 입장권/증빙을 공유하세요.',
+        dedupeKey: `scheduleChange:must-confirm:${itemId}`,
+        kind: 'scheduleChange',
+        cause: 'must_item_created',
+        baseRevision: String(committed.scheduleVersion),
+        links: [{ type: 'scheduleItem', targetId: itemId }],
+      });
+      await this.todosService.ensureAutoTodo(roomId, userId, {
+        title: `입장권 업로드: ${dto.placeName}`,
+        dedupeKey: `scheduleChange:missing-ticket:${itemId}`,
+        kind: 'scheduleChange',
+        cause: 'missing_ticket',
+        baseRevision: String(committed.scheduleVersion),
+        links: [{ type: 'scheduleItem', targetId: itemId }],
+      });
+    }
+
     return {
       ...committed.result,
       scheduleVersion: committed.scheduleVersion,
@@ -942,6 +967,45 @@ export class RoomsService {
         return { result: toReservationDto(reservation) };
       },
     });
+
+    const reservation = committed.result as {
+      id: string;
+      status: string;
+      date?: string;
+      startTime?: string;
+      endTime?: string;
+      timeWindowStart?: string;
+      timeWindowEnd?: string;
+    };
+    const complete =
+      reservation.status === 'confirmed' &&
+      !!reservation.date &&
+      !!(reservation.startTime || reservation.timeWindowStart) &&
+      !!(reservation.endTime || reservation.timeWindowEnd);
+
+    if (complete) {
+      await this.todosService.resolveAuto(roomId, userId, {
+        dedupeKey: `ocrConfirm:reservation:${reservation.id}`,
+      });
+      await this.todosService.resolveAuto(roomId, userId, {
+        dedupeKey: `scheduleChange:must-confirm:${itemId}`,
+      });
+    } else {
+      await this.todosService.ensureAutoTodo(roomId, userId, {
+        title: '예약 정보 확인 필요',
+        description:
+          '날짜·시간(또는 허용 시간창)이 확정되지 않았습니다. OCR/수동 확인 후 저장하세요.',
+        dedupeKey: `ocrConfirm:reservation:${reservation.id}`,
+        kind: 'ocrConfirm',
+        cause: 'reservation_incomplete',
+        baseRevision: String(committed.scheduleVersion),
+        links: [
+          { type: 'scheduleItem', targetId: itemId },
+          { type: 'reservation', targetId: reservation.id, scheduleItemId: itemId },
+        ],
+      });
+    }
+
     return {
       reservation: committed.result,
       scheduleVersion: committed.scheduleVersion,
@@ -975,10 +1039,10 @@ export class RoomsService {
   async listScheduleTickets(roomId: string, userId: string, itemId: string) {
     const room = await this.getRoomForMember(roomId, userId);
     const item = this.findScheduleItem(room, itemId);
-    return {
-      tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t)),
-      scheduleVersion: room.scheduleVersion ?? 0,
-    };
+      return {
+        tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t, roomId)),
+        scheduleVersion: room.scheduleVersion ?? 0,
+      };
   }
 
   async uploadScheduleTicket(
@@ -1001,7 +1065,7 @@ export class RoomsService {
       return {
         idempotent: true,
         scheduleVersion: currentVersion,
-        tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t)),
+        tickets: (item.tickets ?? []).map((t) => this.toTicketDto(t, roomId)),
       };
     }
     if (expectedVersion !== currentVersion) {
@@ -1039,8 +1103,11 @@ export class RoomsService {
             createdAt: new Date(),
           };
           item.tickets.push(ticket);
-          return { result: this.toTicketDto(ticket) };
+          return { result: this.toTicketDto(ticket, roomId) };
         },
+      });
+      await this.todosService.resolveAuto(roomId, userId, {
+        dedupeKey: `scheduleChange:missing-ticket:${itemId}`,
       });
       return {
         ...committed.result,
@@ -1061,6 +1128,8 @@ export class RoomsService {
     expectedVersion: number,
     clientMutationId?: string,
   ) {
+    let placeName = '';
+    let remaining = 0;
     const committed = await this.commitScheduleMutation({
       roomId,
       userId,
@@ -1068,16 +1137,28 @@ export class RoomsService {
       clientMutationId,
       mutate: (room) => {
         const item = this.findScheduleItem(room, itemId);
+        placeName = item.placeName;
         const tickets = item.tickets ?? [];
         const ticket = tickets.find((t) => t.id === ticketId);
         if (!ticket) throw new NotFoundException('Ticket not found');
         item.tickets = tickets.filter((t) => t.id !== ticketId);
+        remaining = item.tickets.length;
         return {
           result: { success: true },
           filesToDelete: [ticket.imageUrl],
         };
       },
     });
+    if (remaining === 0) {
+      await this.todosService.ensureAutoTodo(roomId, userId, {
+        title: `입장권 업로드: ${placeName || itemId}`,
+        dedupeKey: `scheduleChange:missing-ticket:${itemId}`,
+        kind: 'scheduleChange',
+        cause: 'missing_ticket',
+        baseRevision: String(committed.scheduleVersion),
+        links: [{ type: 'scheduleItem', targetId: itemId }],
+      });
+    }
     return { success: true, scheduleVersion: committed.scheduleVersion };
   }
 
@@ -1089,10 +1170,15 @@ export class RoomsService {
     throw new NotFoundException('Schedule item not found');
   }
 
-  private toTicketDto(ticket: ScheduleTicket) {
+  private toTicketDto(ticket: ScheduleTicket, roomId: string) {
+    const download = this.signedUrls.createDownloadUrl({
+      publicPath: ticket.imageUrl,
+      roomId,
+    });
     return {
       id: ticket.id,
       imageUrl: ticket.imageUrl,
+      download,
       uploadedBy: ticket.uploadedBy.toString(),
       note: ticket.note,
       originalName: ticket.originalName,
@@ -1244,7 +1330,7 @@ export class RoomsService {
     userId: string,
     dto: UpdatePlanningDto,
   ) {
-    const room = await this.getRoomForMember(roomId, userId);
+    const room = await this.getRoomForOwner(roomId, userId);
     if (dto.timezone != null) room.timezone = dto.timezone;
     if (dto.lodging !== undefined) {
       room.lodging = fromAnchorDto(dto.lodging ?? undefined);
@@ -1377,6 +1463,7 @@ export class RoomsService {
     userId: string,
     dto: UpdateTripDatesDto,
   ) {
+    await this.getRoomForOwner(roomId, userId);
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
     if (endDate < startDate) {

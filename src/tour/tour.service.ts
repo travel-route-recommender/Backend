@@ -11,6 +11,7 @@ import {
   CongestionDay,
   extractBodyMeta,
   extractItems,
+  extractOperatingHours,
   FestivalCard,
   HubPlaceCard,
   latestBaseYm,
@@ -139,7 +140,7 @@ export class TourService {
     contentId: string,
     contentTypeId?: number,
   ): Promise<PlaceDetail> {
-    const key = `tour:v2:place:${contentId}`;
+    const key = `tour:v3:place:${contentId}`;
     const cached = await this.cache.get<PlaceDetail>(key);
     if (cached) return cached;
 
@@ -169,6 +170,11 @@ export class TourService {
     const phone = commonItem.tel || null;
     const placeUrl = commonItem.homepage || null;
     const imageUrls = gallery.map((g) => g.url).filter(Boolean);
+    const introObj = (extractItems(intro)[0] ?? {}) as Record<string, unknown>;
+    const operatingHours = extractOperatingHours(
+      resolvedTypeId ?? card.contentTypeId,
+      introObj,
+    );
 
     const detail: PlaceDetail = {
       ...card,
@@ -180,8 +186,9 @@ export class TourService {
       overview,
       areaCode: commonItem.areacode || null,
       sigunguCode: commonItem.sigungucode || null,
-      intro: (extractItems(intro)[0] ?? {}) as Record<string, unknown>,
+      intro: introObj,
       repeatingInfo: extractItems(info) as Record<string, unknown>[],
+      operatingHours,
     };
 
     detail.placeId = await this.upsertPlace(detail);
@@ -645,6 +652,8 @@ export class TourService {
           category: detail.contentTypeLabel ?? undefined,
           phone: detail.phone ?? undefined,
           placeUrl: detail.placeUrl ?? undefined,
+          openingHours: detail.operatingHours.hoursText ?? undefined,
+          restDate: detail.operatingHours.restDateText ?? undefined,
         },
       },
       { upsert: true, new: true },

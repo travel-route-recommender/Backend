@@ -35,6 +35,8 @@ export type PlaceDetail = PlaceCard & {
   sigunguCode: string | null;
   intro: Record<string, unknown>;
   repeatingInfo: Record<string, unknown>[];
+  /** 운영시간 구조화. intro 파싱 실패해도 status로 구분 */
+  operatingHours: OperatingHoursInfo;
 };
 
 /** Drop undefined/null/empty values before sending to TourAPI. */
@@ -320,3 +322,154 @@ export function bucketCoord(value: number, decimals = 3): number {
   const f = 10 ** decimals;
   return Math.round(value * f) / f;
 }
+
+export type OperatingHoursInfo = {
+  status: 'ok' | 'unavailable' | 'partial';
+  source: 'tour-detailIntro2';
+  fetchedAt: string;
+  contentTypeId: number | null;
+  /** 원문 필드 스냅샷 (유형별 키가 다름) */
+  raw: Record<string, string | null>;
+  hoursText: string | null;
+  restDateText: string | null;
+  lastEntryText: string | null;
+  /**
+   * 파싱 가능한 경우만. FE가 제약 판정에 사용.
+   * 파싱 실패 시 null (빈 배열로 속이면 안 됨 → “제약 없음”으로 오인)
+   */
+  weekdayRanges: Array<{
+    days: string[];
+    open: string;
+    close: string;
+  }> | null;
+};
+
+const HOURS_FIELDS: Record<number, { hours: string[]; rest: string[]; lastEntry?: string[] }> = {
+  12: { hours: ['usetime'], rest: ['restdate'] },
+  14: { hours: ['usetimeculture'], rest: ['restdateculture'] },
+  15: { hours: ['playtime', 'usetimefestival'], rest: [] },
+  25: { hours: ['taketime', 'schedule'], rest: [] },
+  28: { hours: ['usetimeleports', 'openperiod'], rest: ['restdateleports'] },
+  32: { hours: ['checkintime', 'checkouttime'], rest: [] },
+  38: { hours: ['opentime'], rest: ['restdateshopping'] },
+  39: { hours: ['opentimefood'], rest: ['restdatefood'] },
+};
+
+function pickIntroField(
+  intro: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const v = intro[key];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+/**
+ * Tour detailIntro2 유형별 운영/휴무 필드를 공통 구조로 뽑음.
+ * 원문 실패·빈 값은 unavailable/partial로 구분 (빈 제약으로 위장하지 않음).
+ */
+export function extractOperatingHours(
+  contentTypeId: number | null | undefined,
+  intro: Record<string, unknown> | null | undefined,
+): OperatingHoursInfo {
+  const fetchedAt = new Date().toISOString();
+  const typeId =
+    contentTypeId != null && Number.isFinite(contentTypeId)
+      ? Number(contentTypeId)
+      : null;
+  const mapping = typeId != null ? HOURS_FIELDS[typeId] : undefined;
+  const src = intro ?? {};
+
+  const hoursKeys = mapping?.hours ?? [
+    'usetime',
+    'opentime',
+    'opentimefood',
+    'usetimeculture',
+    'usetimeleports',
+    'playtime',
+  ];
+  const restKeys = mapping?.rest ?? [
+    'restdate',
+    'restdatefood',
+    'restdateculture',
+    'restdateshopping',
+    'restdateleports',
+  ];
+
+  const hoursText = pickIntroField(src, hoursKeys);
+  const restDateText = pickIntroField(src, restKeys);
+  const lastEntryText = pickIntroField(src, [
+    'lasttime',
+    'lastentry',
+    'lastordertime',
+  ]);
+
+  const raw: Record<string, string | null> = {};
+  for (const k of [...hoursKeys, ...restKeys]) {
+    const v = src[k];
+    raw[k] = v == null || String(v).trim() === '' ? null : String(v).trim();
+  }
+
+  const weekdayRanges = parseSimpleWeekdayRanges(hoursText);
+
+  let status: OperatingHoursInfo['status'] = 'unavailable';
+  if (hoursText || restDateText || lastEntryText) {
+    status = weekdayRanges ? 'ok' : 'partial';
+  }
+
+  return {
+    status,
+    source: 'tour-detailIntro2',
+    fetchedAt,
+    contentTypeId: typeId,
+    raw,
+    hoursText,
+    restDateText,
+    lastEntryText,
+    weekdayRanges,
+  };
+}
+
+/** "월~금 09:00~18:00" 같은 단순 패턴만 파싱. 실패 시 null */
+function parseSimpleWeekdayRanges(text: string | null) {
+  if (!text) return null;
+  const dayMap: Record<string, string> = {
+    월: 'mon',
+    화: 'tue',
+    수: 'wed',
+    목: 'thu',
+    금: 'fri',
+    토: 'sat',
+    일: 'sun',
+  };
+  const ranges: Array<{ days: string[]; open: string; close: string }> = [];
+  const re =
+    /([월화수목금토일](?:\s*[~\-–]\s*[월화수목금토일])?(?:\s*,\s*[월화수목금토일])*)\s*(\d{1,2}:\d{2})\s*[~\-–]\s*(\d{1,2}:\d{2})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const dayPart = m[1];
+    const open = m[2].padStart(5, '0');
+    const close = m[3].padStart(5, '0');
+    const days: string[] = [];
+    const rangeMatch = dayPart.match(/([월화수목금토일])\s*[~\-–]\s*([월화수목금토일])/);
+    if (rangeMatch) {
+      const order = ['월', '화', '수', '목', '금', '토', '일'];
+      const a = order.indexOf(rangeMatch[1]);
+      const b = order.indexOf(rangeMatch[2]);
+      if (a >= 0 && b >= 0) {
+        for (let i = a; i <= b; i++) days.push(dayMap[order[i]]);
+      }
+    } else {
+      for (const ch of dayPart) {
+        if (dayMap[ch]) days.push(dayMap[ch]);
+      }
+    }
+    if (days.length) ranges.push({ days, open, close });
+  }
+  return ranges.length ? ranges : null;
+}
+

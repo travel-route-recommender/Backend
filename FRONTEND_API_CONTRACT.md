@@ -802,6 +802,12 @@ type CommonPlace = {
 | 이동제약 새로고침 | `POST .../preferences/refresh-constraints` |
 | 후보 선호 신호 | `PUT .../candidates/:placeId/signals` |
 | 공유 TODO | `GET/POST .../todos`, `PATCH/DELETE .../todos/:todoId`, `POST .../todos/resolve-auto` |
+| 공유 문서 | `GET/POST .../documents`, `DELETE .../documents/:documentId` |
+| 서명 다운로드 | `POST .../files/signed-url` → `GET /files/download?token=` |
+
+### 역할
+- **방장만:** 방 수정·여행지·여행 날짜·planning·초대코드 재발급
+- **멤버:** 일정/후보/TODO/문서/티켓 (TODO 수정·삭제는 작성자·담당자·방장)
 
 ### 버전·충돌 (P0)
 
@@ -917,6 +923,20 @@ POST   /rooms/:roomId/todos/resolve-auto
 - revision 충돌 → `409` + 최신 todo
 - 자동 TODO 삭제 = `archived` + `suppressed` (동일 원인 재생성 방지)
 - 일정 항목 삭제 시 연결 TODO는 detach (`todoLinkImpact`)
+- **자동 생성:** must 일정 추가 → 예약/입장권 TODO · 예약 미확정 → `ocrConfirm` · 티켓 업로드 시 missing-ticket resolve
+
+### 문서 · 서명 URL
+
+```http
+GET/POST /rooms/:roomId/documents
+DELETE   /rooms/:roomId/documents/:documentId
+POST     /rooms/:roomId/files/signed-url   { "path": "/uploads/tickets/..."}
+GET      /files/download?token=...         # Public (토큰만)
+```
+
+- 티켓/문서 응답에 `download: { url, expiresAt, ... }` 포함
+- `UPLOADS_PUBLIC=false`면 정적 `/uploads` 끄고 서명 URL만 사용
+- Tour 상세 `operatingHours`: `{ status, hoursText, restDateText, weekdayRanges, raw, fetchedAt }`
 
 ### PATCH `/rooms/:id/trip-dates`
 

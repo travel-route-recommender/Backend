@@ -12,16 +12,23 @@ const ALLOWED_MIME = new Set([
   'image/heif',
 ]);
 
+const DOC_ALLOWED_MIME = new Set([
+  ...ALLOWED_MIME,
+  'application/pdf',
+]);
+
 const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
   'image/heic': '.heic',
   'image/heif': '.heif',
+  'application/pdf': '.pdf',
 };
 
 export const TICKET_MAX_BYTES = 5 * 1024 * 1024;
 export const TICKET_MAX_PER_ITEM = 10;
+export const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 @Injectable()
 export class LocalUploadService implements OnModuleInit {
@@ -36,6 +43,9 @@ export class LocalUploadService implements OnModuleInit {
 
   async onModuleInit() {
     await fs.mkdir(path.join(this.uploadRoot, 'tickets'), { recursive: true });
+    await fs.mkdir(path.join(this.uploadRoot, 'documents'), {
+      recursive: true,
+    });
   }
 
   getUploadRoot() {
@@ -53,6 +63,20 @@ export class LocalUploadService implements OnModuleInit {
     }
     if (file.size > TICKET_MAX_BYTES) {
       throw new BadRequestException('파일 크기는 5MB 이하여야 합니다');
+    }
+  }
+
+  assertDocumentFile(file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('file 파일이 필요합니다');
+    }
+    if (!DOC_ALLOWED_MIME.has(file.mimetype)) {
+      throw new BadRequestException(
+        '지원 형식: jpeg, png, webp, heic, pdf',
+      );
+    }
+    if (file.size > DOCUMENT_MAX_BYTES) {
+      throw new BadRequestException('파일 크기는 10MB 이하여야 합니다');
     }
   }
 
@@ -84,6 +108,34 @@ export class LocalUploadService implements OnModuleInit {
     };
   }
 
+  async saveRoomDocument(
+    roomId: string,
+    file: Express.Multer.File,
+  ): Promise<{
+    documentId: string;
+    fileUrl: string;
+    absolutePath: string;
+  }> {
+    this.assertDocumentFile(file);
+
+    const documentId = randomUUID();
+    const ext =
+      EXT_BY_MIME[file.mimetype] ??
+      (path.extname(file.originalname).toLowerCase() || '.bin');
+    const dir = path.join(this.uploadRoot, 'documents', roomId);
+    await fs.mkdir(dir, { recursive: true });
+
+    const filename = `${documentId}${ext}`;
+    const absolutePath = path.join(dir, filename);
+    await fs.writeFile(absolutePath, file.buffer);
+
+    return {
+      documentId,
+      fileUrl: `/uploads/documents/${roomId}/${filename}`,
+      absolutePath,
+    };
+  }
+
   async deleteByPublicUrl(imageUrl: string) {
     if (!imageUrl?.startsWith('/uploads/')) return;
     const relative = imageUrl.replace(/^\/uploads\//, '');
@@ -97,3 +149,4 @@ export class LocalUploadService implements OnModuleInit {
     }
   }
 }
+

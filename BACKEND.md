@@ -190,6 +190,8 @@ TripMatch / Tourmate **메인 REST API 서버**
 | 제약 새로고침 | 완료 | POST | `/rooms/:roomId/preferences/refresh-constraints` | ✅ Bearer | |
 | 후보 선호 신호 | 완료 | PUT | `/rooms/:roomId/candidates/:placeId/signals` | ✅ Bearer | |
 | 공유 TODO | 완료 | GET/POST/PATCH/DELETE | `/rooms/:roomId/todos` | ✅ Bearer | revision |
+| 공유 문서 | 완료 | GET/POST/DELETE | `/rooms/:roomId/documents` | ✅ Bearer | 서명 URL |
+| 서명 다운로드 | 완료 | POST/GET | `/rooms/:id/files/signed-url`, `/files/download` | ✅/token | |
 | priority 로직 | 시작 전 | — | — | — | must/optional/skip 필드만 저장 |
 
 ### Invites
