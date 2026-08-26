@@ -19,9 +19,12 @@ async function bootstrap() {
   if (!existsSync(uploadDir)) {
     mkdirSync(uploadDir, { recursive: true });
   }
-  // Images are served outside /api/v1 so imageUrl can be used as-is in <img src>
-  app.useStaticAssets(uploadDir, { prefix: '/uploads' });
-
+  // 하위호환: UPLOADS_PUBLIC=false 이면 정적 /uploads 비활성 → 서명 URL만
+  const uploadsPublic =
+    configService.get<string>('UPLOADS_PUBLIC', 'true') !== 'false';
+  if (uploadsPublic) {
+    app.useStaticAssets(uploadDir, { prefix: '/uploads' });
+  }
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(

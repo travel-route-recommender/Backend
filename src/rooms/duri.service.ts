@@ -150,9 +150,9 @@ export class DuriService {
   private async resolveItemCoords(
     items: Array<{
       id: string;
-      placeId?: Types.ObjectId;
-      lat?: number;
-      lng?: number;
+      placeId?: Types.ObjectId | string | null;
+      lat?: number | null;
+      lng?: number | null;
     }>,
   ): Promise<Map<string, Coord>> {
     const map = new Map<string, Coord>();

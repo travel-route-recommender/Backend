@@ -44,6 +44,9 @@ export class Place {
   @Prop()
   openingHours?: string;
 
+  @Prop()
+  restDate?: string;
+
   @Prop({ default: 0 })
   popularityScore: number;
 

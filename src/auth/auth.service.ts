@@ -99,7 +99,15 @@ export class AuthService {
       userId: user._id,
       role: 'member',
       joinedAt: new Date(),
+      mobilityConstraints: {
+        values: [],
+        status: 'missing',
+        source: 'user',
+        version: 1,
+        updatedAt: new Date(),
+      },
     });
+    room.factsVersion = (room.factsVersion ?? 0) + 1;
     await room.save();
 
     const tokens = await this.issueTokens(user._id.toString());

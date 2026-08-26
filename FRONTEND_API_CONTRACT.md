@@ -584,7 +584,8 @@ PublicUser & {
 ### 일정 저장 동시성
 
 - `GET /rooms/:id/schedule` → `{ days, scheduleVersion }`
-- `PUT /rooms/:id/schedule` body에 `expectedVersion` 포함 권장
+- `PUT /rooms/:id/schedule` body에 `expectedVersion` **필수**
+- 단일 item 추가/수정/삭제/reorder/tickets도 `expectedVersion` **필수**
 - version mismatch 시 **409 Conflict** (`currentVersion` 포함)
 - reorder는 해당 day의 **모든 item id exact permutation** 필수
 - `UpdateScheduleItemDto`에 `reason` 포함
@@ -785,59 +786,71 @@ type CommonPlace = {
 
 | 동작 | API |
 |------|-----|
-| 같은 날 순서 변경 | `PATCH .../schedule/reorder` `{ day, itemIds }` |
-| 다른 날로 이동 | `PATCH .../schedule/items/:itemId` `{ day }` |
-| 시작/종료 시간 변경 | `PATCH .../schedule/items/:itemId` `{ startTime, endTime }` |
-| 항목 추가 | `POST .../schedule/items` |
-| 전체 교체 (두리 적용) | `PUT .../schedule` `{ days: [...] }` |
-| 입장권 업로드 | `POST .../schedule/items/:itemId/tickets` (multipart `image`) |
-| 입장권 목록 | `GET .../schedule/items/:itemId/tickets` |
-| 입장권 삭제 | `DELETE .../schedule/items/:itemId/tickets/:ticketId` |
+| 같은 날 순서 변경 | `PATCH .../schedule/reorder` `{ day, itemIds, expectedVersion }` |
+| 다른 날로 이동 | `PATCH .../schedule/items/:itemId` `{ day\|date, expectedVersion, unlock? }` |
+| 시작/종료 시간 변경 | `PATCH .../schedule/items/:itemId` `{ startTime, endTime, expectedVersion }` |
+| 항목 추가 | `POST .../schedule/items` `{ ..., expectedVersion }` |
+| 전체 교체 | `PUT .../schedule` `{ days, expectedVersion }` **필수** |
+| 잠금 | `PATCH .../schedule/items/:itemId/lock` `{ locked, expectedVersion }` |
+| 확정 예약 | `PUT .../schedule/items/:itemId/reservation` |
+| 입장권 업로드 | `POST .../tickets` multipart `image` + `expectedVersion` |
+| 계획 설정 | `GET/PATCH .../planning` (숙소·복귀·timezone·이동수단·버퍼) |
+| 여행 날짜 원자 변경 | `PATCH .../trip-dates` `{ startDate, endDate, expectedVersion, itemActions? }` |
+| 제안 적용 | `POST .../schedule/apply` `{ days, expectedVersion, expectedFactsVersion? }` |
+| 분석 기준 | `GET .../analysis-baseline` |
+| 성향 공유 | `GET .../preferences` (파생값만, null≠0) |
+| 이동제약 새로고침 | `POST .../preferences/refresh-constraints` |
+| 후보 선호 신호 | `PUT .../candidates/:placeId/signals` |
+| 공유 TODO | `GET/POST .../todos`, `PATCH/DELETE .../todos/:todoId`, `POST .../todos/resolve-auto` |
+| 공유 문서 | `GET/POST .../documents`, `DELETE .../documents/:documentId` |
+| 서명 다운로드 | `POST .../files/signed-url` → `GET /files/download?token=` |
+
+### 역할
+- **방장만:** 방 수정·여행지·여행 날짜·planning·초대코드 재발급
+- **멤버:** 일정/후보/TODO/문서/티켓 (TODO 수정·삭제는 작성자·담당자·방장)
+
+### 버전·충돌 (P0)
+
+- 모든 일정/티켓 변경에 **`expectedVersion` 필수**
+- 서버는 `findOneAndUpdate({ scheduleVersion })` 조건부 커밋
+- 충돌 시 `409` `{ code: "SCHEDULE_VERSION_CONFLICT", currentVersion, expectedVersion }`
+- 파일 삭제는 **커밋 성공 후**만 실행 (충돌 시 기존 파일 유지)
+- `clientMutationId` 재전송 시 동일 결과·버전 유지 (idempotent)
+- 잠긴 항목: 이동/리사이즈/삭제/장소교체 거부. `unlock=true` 또는 lock API로 해제
+- `placeId` 변경 시 **티켓·예약 비승계** (이전 티켓 파일은 커밋 후 삭제)
+- 같은 day 시간 겹침 → `400 SCHEDULE_OVERLAP`
+- `date`(YYYY-MM-DD)가 있으면 day는 서버가 `startDate`에서 파생
 
 ### 입장권 (사용자 업로드 사진)
-
-카카오에서 가져오는 API가 아니라, **유저가 찍은/저장한 티켓·QR 사진**을 일정 항목에 첨부합니다.
 
 ```http
 POST /rooms/:roomId/schedule/items/:itemId/tickets
 Content-Type: multipart/form-data
 Authorization: Bearer …
 
-image: <file>   # jpeg/png/webp/heic, ≤5MB
-note: 사전 예매 QR   # optional
+image: <file>            # jpeg/png/webp/heic, ≤5MB
+expectedVersion: 3       # 필수
+note: 사전 예매 QR         # optional
+clientMutationId: ...    # optional
 ```
 
-응답 예:
-
-```json
-{
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "imageUrl": "/uploads/tickets/{roomId}/{id}.jpg",
-  "uploadedBy": "665abc…",
-  "note": "사전 예매 QR",
-  "originalName": "ticket.jpg",
-  "mimeType": "image/jpeg",
-  "createdAt": "2026-08-12T01:00:00.000Z"
-}
-```
-
-- 이미지 표시: `{APP_BASE_URL}{imageUrl}` (예: `http://localhost:3000/uploads/...`)
+- 이미지 표시: `{APP_BASE_URL}{imageUrl}`
 - 항목당 최대 10장
-- `PUT /schedule` batch 시 ticket body는 받지 않음 — **같은 item id면 tickets 유지**, 사라진 item의 파일은 삭제
-- 일정 항목 GET 응답의 `tickets` 배열에도 포함
+- `placeId`가 바뀌면 기존 tickets는 **승계되지 않음**
+- DELETE도 `?expectedVersion=` 필수
 
 ### PUT `/rooms/:id/schedule` (batch)
 
-- **전체 replace** (해당 room.schedule.days 통째 교체)  
-- 단일 Mongo document save → 사실상 원자적  
-- Validation 실패 시 저장 안 함  
-- `id` 없으면 서버가 `item-{timestamp}-{random}` 생성  
-- 요청에 없는 item = 삭제
+- **전체 replace** + **expectedVersion 필수** + 조건부 쓰기  
+- Validation 실패·버전 충돌 시 저장 안 함 (파일 부수효과 없음)  
+- `id` 없으면 서버가 생성  
+- 요청에 없는 item = 삭제 (잠긴 item 삭제는 거부)  
+- 같은 item id + 같은 placeId면 tickets/reservation 유지; placeId 변경 시 티켓 비승계  
 
 ### reorder
 
 ```json
-{ "day": 1, "itemIds": ["item-3", "item-1", "item-2"] }
+{ "day": 1, "itemIds": ["item-3", "item-1", "item-2"], "expectedVersion": 3 }
 ```
 
 같은 day 순서만. 시간 변경/날짜 이동 불가.
@@ -874,12 +887,85 @@ note: 사전 예매 QR   # optional
 
 | 포함 | 미포함 |
 |------|--------|
-| 자동차 경로 거리·시간 (Kakao Mobility) | 대중교통 / **막차시간** |
+| 자동차 경로 거리·시간 (Kakao Mobility) | 대중교통 / **막차시간** (실데이터) |
 | 선택적 path 좌표 (`summaryOnly: false`) | 예약 조회 (외부 OTA) |
+
+### POST `/mobility/transit` (stub)
+
+```json
+{ "available": false, "reason": "TRANSIT_PROVIDER_NOT_CONFIGURED", "legs": [], "lastDepartureAt": null }
+```
+
+프로바이더/키 정해지면 채움. 지금은 FE가 `available:false`로 분기하면 됨.
+
+### Notifications (stub)
+
+- `GET /notifications` → `{ available: false, items: [], unreadCount: 0 }`
+- `POST /notifications/ack` → 저장 없음
 
 입장권 사진은 Mobility가 아니라 **일정 항목 tickets API**로 관리합니다 (`POST/GET/DELETE .../schedule/items/:itemId/tickets`).
 
 두리 분석 리포트(`POST /rooms/:id/duri/analysis-report`)의 `routeAnalysis`도 같은 Mobility를 사용해 segment별 `distanceMeters` / `durationSeconds`를 채웁니다. 좌표가 없거나 키가 없으면 해당 segment는 `status: "unknown"`.
+
+---
+
+## 11b. Shared TODO
+
+```http
+GET    /rooms/:roomId/todos
+POST   /rooms/:roomId/todos
+PATCH  /rooms/:roomId/todos/:todoId   # expectedRevision 필수
+DELETE /rooms/:roomId/todos/:todoId?expectedRevision=
+POST   /rooms/:roomId/todos/resolve-auto
+```
+
+- 담당자(`assigneeId`)는 **현재 방 멤버만**
+- revision 충돌 → `409` + 최신 todo
+- 자동 TODO 삭제 = `archived` + `suppressed` (동일 원인 재생성 방지)
+- 일정 항목 삭제 시 연결 TODO는 detach (`todoLinkImpact`)
+- **자동 생성:** must 일정 추가 → 예약/입장권 TODO · 예약 미확정 → `ocrConfirm` · 티켓 업로드 시 missing-ticket resolve
+
+### 문서 · 서명 URL
+
+```http
+GET/POST /rooms/:roomId/documents
+DELETE   /rooms/:roomId/documents/:documentId
+POST     /rooms/:roomId/files/signed-url   { "path": "/uploads/tickets/..."}
+GET      /files/download?token=...         # Public (토큰만)
+```
+
+- 티켓/문서 응답에 `download: { url, expiresAt, ... }` 포함
+- `UPLOADS_PUBLIC=false`면 정적 `/uploads` 끄고 서명 URL만 사용
+- Tour 상세 `operatingHours`: `{ status, hoursText, restDateText, weekdayRanges, raw, fetchedAt }`
+
+### PATCH `/rooms/:id/trip-dates`
+
+날짜 변경 + 일정 move/delete를 **한 `scheduleVersion` 조건부 커밋**으로 저장.
+
+```json
+{
+  "startDate": "2026-07-10",
+  "endDate": "2026-07-14",
+  "expectedVersion": 3,
+  "itemActions": [
+    { "itemId": "item-1", "action": "move", "day": 2 },
+    { "itemId": "item-2", "action": "delete", "unlock": true }
+  ]
+}
+```
+
+기간 밖 day는 `ITEM_OUT_OF_RANGE` — `itemActions`로 move/delete 필수.
+
+### POST `/rooms/:id/schedule/apply`
+
+batch `PUT /schedule`와 동일 잠금·예약 규칙 + optional `expectedFactsVersion` (불일치 시 `FACTS_VERSION_CONFLICT`).
+
+### GET `/rooms/:id/preferences`
+
+- axes 파생값 + unit/range/source/method
+- 미응답 → `null` (0 채우지 않음)
+- `mobilityConstraints.status`: `present` | `missing` | `stale`
+- `candidateSignals[].preferenceStrength` 미응답 = `null`
 
 ---
 

@@ -12,6 +12,7 @@ import { DestinationsModule } from './destinations/destinations.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { TourModule } from './tour/tour.module';
 import { MobilityModule } from './mobility/mobility.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { MobilityModule } from './mobility/mobility.module';
     DestinationsModule,
     TourModule,
     MobilityModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
