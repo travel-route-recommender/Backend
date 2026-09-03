@@ -1,50 +1,53 @@
 import { TravelType } from '../schemas/user.schema';
 import {
+  ChallengeStyleType,
   PersonalityAxes,
-  PlaceFeatures,
   QuizPreferences,
   QuizResponses,
-  ScheduleFeatures,
-  ScheduleSlotDraft,
   SpendingCategory,
   StaminaLevel,
 } from './quiz.types';
 
-/** 테스트 스텝 메타 (프론트 안내용) */
+/** 테스트 스텝 메타 (프론트 안내용) — 챕터 단위 */
 export const QUIZ_STEPS = [
   {
-    id: 'schedule',
-    title: '일정 밀도 · 명소/로컬',
+    id: 'challengeStyle',
+    title: '도전 · 일정 · 활동',
     description:
-      '반나절 일정표를 자유롭게 채워 주세요. 일정 밀도·명소 필수도·로컬 관심도를 함께 측정합니다.',
-  },
-  {
-    id: 'transport',
-    title: '이동 방식',
-    description: '선호하는 이동 수단을 복수 선택하고 선호도를 표시해 주세요.',
+      '도전·안정 성향과 활동 종류·일정 밀도 선호를 측정합니다.',
   },
   {
     id: 'accommodation',
     title: '숙소 스타일',
-    description: '각 축에서 본인에게 가까운 쪽을 선택해 주세요.',
-  },
-  {
-    id: 'validation',
-    title: '도전 · 안정',
-    description: '검증이 덜 된 곳 vs 많이 된 곳 중 어디에 더 끌리나요?',
+    description: '숙소 의미·위치/시설·편안함/가격 축을 선택합니다.',
   },
   {
     id: 'stamina',
     title: '체력 수준',
-    description: '여행 중 체력은 어떤 편인가요? (LOW / NORMAL / HIGH)',
+    description: '여행 중 체력 (low / medium / high).',
   },
   {
-    id: 'spending',
-    title: '예산 소비 성향',
-    description: '코인 100개를 카테고리에 분배해 주세요. 총예산은 묻지 않습니다.',
+    id: 'budget',
+    title: '예산 우선순위',
+    description:
+      '숙소·음식·액티비티·쇼핑·이동 5개 항목의 우선순위만 정합니다. (코인 분배 없음)',
+  },
+  {
+    id: 'discovery',
+    title: '명소 · 로컬',
+    description: '명소 필수도와 로컬 관심도를 측정합니다.',
   },
 ] as const;
 
+export const BUDGET_RANK_ITEMS = [
+  'stay',
+  'food',
+  'activity',
+  'shopping',
+  'mobility',
+] as const;
+
+/** @deprecated tags API mock 유지 */
 export const SPENDING_CATEGORIES: SpendingCategory[] = [
   'ACCOMMODATION',
   'FOOD',
@@ -102,6 +105,31 @@ export const MOCK_SPENDING_TAGS = [
 ];
 
 const TRAVEL_TYPES: Record<string, TravelType> = {
+  challenge_executor: {
+    name: '도전 실행형',
+    description:
+      '새로운 경험과 변화를 적극적으로 찾고, 일정도 밀도 있게 밀어붙이는 스타일이에요.',
+    tags: ['도전', '액티비티', '알찬코스', '탐험'],
+    warning: '너무 안전한 코스만 있으면 심심할 수 있어요.',
+    emoji: '🔥',
+  },
+  cautious_explorer: {
+    name: '신중한 탐험가',
+    description:
+      '탐험은 좋아하지만 안정감도 챙기는 스타일이에요. 검증과 새로움 사이에서 균형을 봐요.',
+    tags: ['탐험', '명소', '로컬', '균형'],
+    warning: '극단적으로 빡센 일정이나 과도한 모험은 부담될 수 있어요.',
+    emoji: '🧭',
+  },
+  stable_planner: {
+    name: '안정 계획형',
+    description:
+      '검증된 곳과 여유 있는 페이스를 선호하고, 예측 가능한 여행을 즐기는 스타일이에요.',
+    tags: ['안정', '계획', '여유로운코스', '명소'],
+    warning: '즉흥·미검증 장소가 많으면 불편할 수 있어요.',
+    emoji: '📋',
+  },
+  /** 레거시 매칭 폴백 */
   relaxedLocal: {
     name: '여유로운 로컬형',
     description:
@@ -140,133 +168,30 @@ function clamp(n: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
-export function extractFeaturesFromSchedule(
-  slots: ScheduleSlotDraft[],
-): { scheduleFeatures: ScheduleFeatures; placeFeatures: PlaceFeatures } {
-  if (!slots.length) {
-    return {
-      scheduleFeatures: {
-        scheduleSpanMinutes: 0,
-        scheduledMinutes: 0,
-        activityMinutes: 0,
-        restMinutes: 0,
-        freeTimeMinutes: 0,
-        placeCount: 0,
-        restBlockCount: 0,
-        averageStayMinutes: 0,
-      },
-      placeFeatures: {
-        selectedPlaceCount: 0,
-        selectedLandmarkCount: 0,
-        selectedLocalPlaceCount: 0,
-        averageLandmarkScore: 0,
-        averageLocalScore: 0,
-        landmarkAllocatedMinutes: 0,
-        localAllocatedMinutes: 0,
-      },
-    };
-  }
-
-  const starts = slots.map((s) => s.startMinutes);
-  const ends = slots.map((s) => s.endMinutes);
-  const spanStart = Math.min(...starts);
-  const spanEnd = Math.max(...ends);
-  const scheduleSpanMinutes = Math.max(0, spanEnd - spanStart);
-
-  let activityMinutes = 0;
-  let restMinutes = 0;
-  let freeTimeMinutes = 0;
-  let placeCount = 0;
-  let restBlockCount = 0;
-  let landmarkAllocatedMinutes = 0;
-  let localAllocatedMinutes = 0;
-  let landmarkCount = 0;
-  let localCount = 0;
-  let landmarkScoreSum = 0;
-  let localScoreSum = 0;
-
-  for (const slot of slots) {
-    const duration = Math.max(0, slot.endMinutes - slot.startMinutes);
-    if (slot.kind === 'PLACE') {
-      activityMinutes += duration;
-      placeCount += 1;
-      const landmark = slot.landmarkScore ?? 50;
-      const local = slot.localScore ?? 50;
-      landmarkScoreSum += landmark;
-      localScoreSum += local;
-      if (landmark >= local) {
-        landmarkCount += 1;
-        landmarkAllocatedMinutes += duration;
-      } else {
-        localCount += 1;
-        localAllocatedMinutes += duration;
-      }
-    } else if (slot.kind === 'REST') {
-      restMinutes += duration;
-      restBlockCount += 1;
-    } else {
-      freeTimeMinutes += duration;
-    }
-  }
-
-  const scheduledMinutes = activityMinutes + restMinutes;
-  const averageStayMinutes =
-    placeCount > 0 ? Math.round(activityMinutes / placeCount) : 0;
-
-  return {
-    scheduleFeatures: {
-      scheduleSpanMinutes,
-      scheduledMinutes,
-      activityMinutes,
-      restMinutes,
-      freeTimeMinutes,
-      placeCount,
-      restBlockCount,
-      averageStayMinutes,
-    },
-    placeFeatures: {
-      selectedPlaceCount: placeCount,
-      selectedLandmarkCount: landmarkCount,
-      selectedLocalPlaceCount: localCount,
-      averageLandmarkScore:
-        placeCount > 0 ? Math.round(landmarkScoreSum / placeCount) : 0,
-      averageLocalScore:
-        placeCount > 0 ? Math.round(localScoreSum / placeCount) : 0,
-      landmarkAllocatedMinutes,
-      localAllocatedMinutes,
-    },
-  };
-}
-
+/** FE 산출 점수를 여행방 공유용 4축으로 매핑 */
 export function computePersonalityAxes(
   responses: QuizResponses,
 ): PersonalityAxes {
-  let scheduleFeatures = responses.scheduleFeatures;
-  let placeFeatures = responses.placeFeatures;
-
-  if (responses.scheduleDraft?.length) {
-    const extracted = extractFeaturesFromSchedule(responses.scheduleDraft);
-    scheduleFeatures = scheduleFeatures ?? extracted.scheduleFeatures;
-    placeFeatures = placeFeatures ?? extracted.placeFeatures;
-  }
-
-  const span = scheduleFeatures?.scheduleSpanMinutes || 1;
-  const scheduled = scheduleFeatures?.scheduledMinutes ?? 0;
-  const densityRatio = scheduled / span;
-  const scheduleDensity = clamp(densityRatio * 100);
-
-  const landmarkMin = placeFeatures?.landmarkAllocatedMinutes ?? 0;
-  const localMin = placeFeatures?.localAllocatedMinutes ?? 0;
-  const placeTotal = landmarkMin + localMin || 1;
-  const landmarkNecessity = clamp((landmarkMin / placeTotal) * 100);
-  const localInterest = clamp((localMin / placeTotal) * 100);
-
-  let challenging = responses.challenging;
-  if (challenging == null && responses.placeValidationPreference) {
-    challenging =
-      responses.placeValidationPreference === 'LESS_VALIDATED' ? 75 : 25;
-  }
-  challenging = clamp(challenging ?? 50);
+  const scheduleDensity = clamp(
+    responses.challengeStyle?.scheduleStyle?.score ??
+      responses.challengeStyle?.scheduleStyle?.components?.density ??
+      50,
+  );
+  const landmarkNecessity = clamp(
+    responses.discovery?.scores?.landmarkImportance ?? 50,
+  );
+  const localInterest = clamp(
+    responses.discovery?.scores?.localInterest ?? 50,
+  );
+  const scores = responses.challengeStyle?.scores;
+  const challenging = clamp(
+    scores
+      ? (scores.opennessToVariety +
+          scores.excitementSeeking +
+          scores.exploration) /
+          3
+      : 50,
+  );
 
   return {
     scheduleDensity,
@@ -276,7 +201,13 @@ export function computePersonalityAxes(
   };
 }
 
-export function deriveTravelType(axes: PersonalityAxes): TravelType {
+export function deriveTravelType(
+  axes: PersonalityAxes,
+  challengeType?: ChallengeStyleType,
+): TravelType {
+  if (challengeType && TRAVEL_TYPES[challengeType]) {
+    return TRAVEL_TYPES[challengeType];
+  }
   if (axes.challenging >= 65 && axes.scheduleDensity >= 55) {
     return TRAVEL_TYPES.adventurous;
   }
@@ -291,37 +222,38 @@ export function deriveTravelType(axes: PersonalityAxes): TravelType {
 
 export function buildPreferences(
   responses: QuizResponses,
-  axes: PersonalityAxes,
 ): QuizPreferences {
-  let scheduleFeatures = responses.scheduleFeatures;
-  let placeFeatures = responses.placeFeatures;
-  if (responses.scheduleDraft?.length) {
-    const extracted = extractFeaturesFromSchedule(responses.scheduleDraft);
-    scheduleFeatures = scheduleFeatures ?? extracted.scheduleFeatures;
-    placeFeatures = placeFeatures ?? extracted.placeFeatures;
-  }
-
   return {
-    transportPreferences: responses.transportPreferences,
-    accommodationPreference: responses.accommodationPreference,
-    placeValidationPreference: responses.placeValidationPreference,
-    challenging: axes.challenging,
-    staminaLevel: responses.staminaLevel,
-    spendingAllocation: responses.spendingAllocation,
-    scheduleFeatures,
-    placeFeatures,
+    surveyVersion: responses.surveyVersion,
+    algorithmVersion: responses.algorithmVersion,
+    challengeStyleType: responses.challengeStyle?.type,
+    scheduleStyleType: responses.challengeStyle?.scheduleStyle?.type,
+    challengeScores: responses.challengeStyle?.scores,
+    scheduleStyle: responses.challengeStyle?.scheduleStyle,
+    itineraryPreference: responses.challengeStyle?.itineraryPreference,
+    accommodation: responses.accommodation?.scores,
+    stamina: responses.stamina,
+    budgetRanking: responses.budget?.ranking,
+    discovery: responses.discovery?.scores,
   };
 }
 
 /** 나이·이동 제약으로 체력 레벨을 보정 (표시용 메타) */
 export function resolveStaminaLevel(input: {
   staminaLevel?: StaminaLevel;
+  staminaScore?: number;
   birthYear?: number;
   age?: number;
   mobilityConstraints?: string[];
 }): { staminaLevel: StaminaLevel; staminaScore: number } {
   const base =
-    input.staminaLevel === 'HIGH' ? 80 : input.staminaLevel === 'LOW' ? 30 : 55;
+    input.staminaScore != null
+      ? input.staminaScore
+      : input.staminaLevel === 'HIGH'
+        ? 80
+        : input.staminaLevel === 'LOW'
+          ? 30
+          : 55;
 
   let age = input.age;
   if (age == null && input.birthYear) {
@@ -343,45 +275,35 @@ export function resolveStaminaLevel(input: {
   if (score >= 70) staminaLevel = 'HIGH';
   else if (score <= 40) staminaLevel = 'LOW';
 
+  // FE가 level을 명시했으면 우선 사용하되 score는 보정값 유지
+  if (input.staminaLevel) {
+    return { staminaLevel: input.staminaLevel, staminaScore: score };
+  }
+
   return { staminaLevel, staminaScore: score };
 }
 
 export function countAnsweredSteps(responses: QuizResponses): number {
   let n = 0;
-  if (responses.scheduleDraft?.length || responses.scheduleFeatures) n += 1;
-  if (responses.transportPreferences) n += 1;
-  if (responses.accommodationPreference) n += 1;
-  if (
-    responses.placeValidationPreference != null ||
-    responses.challenging != null
-  ) {
-    n += 1;
-  }
-  if (responses.staminaLevel) n += 1;
-  if (responses.spendingAllocation) n += 1;
+  if (responses.challengeStyle?.type) n += 1;
+  if (responses.accommodation?.scores) n += 1;
+  if (responses.stamina?.level) n += 1;
+  if (responses.budget?.ranking?.length === 5) n += 1;
+  if (responses.discovery?.scores) n += 1;
   return n;
 }
 
-/** 6단계가 모두 채워졌는지 */
 export function areAllStepsAnswered(responses: QuizResponses): boolean {
   return countAnsweredSteps(responses) >= QUIZ_STEPS.length;
 }
 
 export function missingSteps(responses: QuizResponses): string[] {
   const missing: string[] = [];
-  if (!(responses.scheduleDraft?.length || responses.scheduleFeatures)) {
-    missing.push('schedule');
-  }
-  if (!responses.transportPreferences) missing.push('transport');
-  if (!responses.accommodationPreference) missing.push('accommodation');
-  if (
-    responses.placeValidationPreference == null &&
-    responses.challenging == null
-  ) {
-    missing.push('validation');
-  }
-  if (!responses.staminaLevel) missing.push('stamina');
-  if (!responses.spendingAllocation) missing.push('spending');
+  if (!responses.challengeStyle?.type) missing.push('challengeStyle');
+  if (!responses.accommodation?.scores) missing.push('accommodation');
+  if (!responses.stamina?.level) missing.push('stamina');
+  if (responses.budget?.ranking?.length !== 5) missing.push('budget');
+  if (!responses.discovery?.scores) missing.push('discovery');
   return missing;
 }
 

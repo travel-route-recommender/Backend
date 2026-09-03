@@ -100,14 +100,14 @@ TripMatch / Tourmate **메인 REST API 서버**
 
 | 이름 | 상태 | Method | Path | 인증 | description |
 |------|------|--------|------|------|-------------|
-| 스텝 메타 | 완료 | GET | `/quiz/steps` | ❌ | schedule~spending |
+| 스텝 메타 | 완료 | GET | `/quiz/steps` | ❌ | challengeStyle~discovery |
 | 문항(스텝) 조회 | 완료 | GET | `/quiz/questions` | ❌ | 안내용 |
-| 예산 태그 | 완료 | GET | `/quiz/tags` | ❌ | mock 카테고리 |
+| 예산 태그 | 완료 | GET | `/quiz/tags` | ❌ | ranking 항목 + mock |
 | 진행 상태 | 완료 | GET | `/quiz/status` | ✅ Bearer | sessionId, answeredCount |
-| 성향 조회 | 완료 | GET | `/quiz/me` | ✅ Bearer | axes + preferences |
+| 성향 조회 | 완료 | GET | `/quiz/me` | ✅ Bearer | axes + preferences + responses |
 | 세션 생성 | 완료 | POST | `/quiz/sessions` | ✅ Bearer | in_progress |
-| 중간 저장 | 완료 | PATCH | `/quiz/sessions/:id` | ✅ Bearer | responses merge |
-| 테스트 완료 | 완료 | POST | `/quiz/sessions/:id/complete` | ✅ Bearer | 4축 + TravelType |
+| 중간 저장 | 완료 | PATCH | `/quiz/sessions/:id` | ✅ Bearer | 챕터 partial merge |
+| 테스트 완료 | 완료 | POST | `/quiz/sessions/:id/complete` | ✅ Bearer | FE 점수 저장 + TravelType |
 | 레거시 제출 | deprecated | POST | `/quiz/submit` | ✅ Bearer | 구 8문항 |
 
 ### Places

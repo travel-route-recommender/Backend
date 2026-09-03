@@ -12,6 +12,7 @@ import {
   QUIZ_STEPS,
   MOCK_SPENDING_TAGS,
   SPENDING_CATEGORIES,
+  BUDGET_RANK_ITEMS,
   areAllStepsAnswered,
   buildPreferences,
   calculateTravelType,
@@ -22,7 +23,10 @@ import {
   resolveStaminaLevel,
 } from './quiz.data';
 import { QuizResponses } from './quiz.types';
-import { QuizResponsesDto } from './dto/quiz-session.dto';
+import {
+  PartialQuizResponsesDto,
+  QuizResponsesDto,
+} from './dto/quiz-session.dto';
 
 @Injectable()
 export class QuizService {
@@ -43,19 +47,19 @@ export class QuizService {
   getTags() {
     return {
       source: 'mock' as const,
+      note: '예산은 코인 분배 대신 ranking(우선순위)만 사용합니다.',
+      budgetRankItems: BUDGET_RANK_ITEMS,
       categories: SPENDING_CATEGORIES,
       tags: MOCK_SPENDING_TAGS,
     };
   }
 
-  /** 최신 시도 (진행 중일 수 있음) */
   async getLatestAttempt(userId: string) {
     return this.testResultModel
       .findOne({ userId: new Types.ObjectId(userId), isLatest: true })
       .exec();
   }
 
-  /** 최신 완료 결과 (재테스트 중단해도 유지) */
   async getLatestCompleted(userId: string) {
     return this.testResultModel
       .findOne({
@@ -114,13 +118,16 @@ export class QuizService {
         axes: user?.personalityAxes ?? null,
         preferences: user?.quizPreferences ?? null,
         stamina: null,
+        responses: null,
         activeSessionId:
           attempt?.status === 'in_progress' ? attempt._id.toString() : null,
       };
     }
 
+    const responses = (result.responses ?? {}) as QuizResponses;
     const stamina = resolveStaminaLevel({
-      staminaLevel: (result.responses as QuizResponses)?.staminaLevel,
+      staminaLevel: responses.stamina?.level,
+      staminaScore: responses.stamina?.score,
       birthYear: user?.birthYear,
       mobilityConstraints: user?.mobilityConstraints,
     });
@@ -131,7 +138,11 @@ export class QuizService {
       travelType: result.travelType ?? user?.travelType ?? null,
       axes: result.axes ?? user?.personalityAxes ?? null,
       preferences: result.preferences ?? user?.quizPreferences ?? null,
-      stamina,
+      stamina: {
+        ...stamina,
+        answer: responses.stamina?.answer ?? null,
+      },
+      responses,
       completedAt: result.completedAt,
       activeSessionId:
         attempt?.status === 'in_progress' ? attempt._id.toString() : null,
@@ -141,7 +152,6 @@ export class QuizService {
   async createSession(userId: string) {
     const userObjectId = new Types.ObjectId(userId);
 
-    // 이전 시도의 isLatest만 해제. 완료 결과(isLatestCompleted)는 유지.
     await this.testResultModel.updateMany(
       { userId: userObjectId, isLatest: true },
       { isLatest: false },
@@ -158,7 +168,11 @@ export class QuizService {
     return this.formatSession(session);
   }
 
-  async patchSession(userId: string, sessionId: string, dto: QuizResponsesDto) {
+  async patchSession(
+    userId: string,
+    sessionId: string,
+    dto: PartialQuizResponsesDto,
+  ) {
     const session = await this.findOwnedSession(userId, sessionId);
     if (session.status === 'completed') {
       throw new BadRequestException('이미 완료된 세션입니다.');
@@ -177,41 +191,48 @@ export class QuizService {
   async completeSession(
     userId: string,
     sessionId: string,
-    dto?: QuizResponsesDto,
+    dto: QuizResponsesDto,
   ) {
     const session = await this.findOwnedSession(userId, sessionId);
     if (session.status === 'completed') {
       throw new BadRequestException('이미 완료된 세션입니다.');
     }
 
-    if (dto) {
-      session.responses = {
-        ...(session.responses as object),
-        ...this.stripUndefined(dto as object),
-      } as Record<string, unknown>;
-    }
+    // complete는 전체 QuizResponsesDto를 받음 (FE가 점수까지 계산)
+    session.responses = this.stripUndefined(dto as object) as Record<
+      string,
+      unknown
+    >;
 
     const responses = session.responses as QuizResponses;
     if (!areAllStepsAnswered(responses)) {
       const missing = missingSteps(responses);
       throw new BadRequestException(
-        `모든 테스트 단계(${QUIZ_STEPS.length}개)를 완료해야 합니다. 부족한 단계: ${missing.join(', ')}`,
+        `모든 테스트 챕터(${QUIZ_STEPS.length}개)를 완료해야 합니다. 부족한 챕터: ${missing.join(', ')}`,
+      );
+    }
+    if (
+      responses.surveyVersion == null ||
+      responses.algorithmVersion == null
+    ) {
+      throw new BadRequestException(
+        'surveyVersion과 algorithmVersion이 필요합니다.',
       );
     }
 
     const user = await this.usersService.findById(userId);
     const axes = computePersonalityAxes(responses);
-    const travelType = deriveTravelType(axes);
-    const preferences = buildPreferences(responses, axes);
+    const travelType = deriveTravelType(
+      axes,
+      responses.challengeStyle?.type,
+    );
+    const preferences = buildPreferences(responses);
     const stamina = resolveStaminaLevel({
-      staminaLevel: responses.staminaLevel,
+      staminaLevel: responses.stamina?.level,
+      staminaScore: responses.stamina?.score,
       birthYear: user?.birthYear,
       mobilityConstraints: user?.mobilityConstraints,
     });
-
-    if (preferences.staminaLevel == null) {
-      preferences.staminaLevel = stamina.staminaLevel;
-    }
 
     const userObjectId = new Types.ObjectId(userId);
     await this.testResultModel.updateMany(
@@ -236,10 +257,17 @@ export class QuizService {
 
     return {
       sessionId: session._id.toString(),
+      surveyVersion: responses.surveyVersion,
+      algorithmVersion: responses.algorithmVersion,
       travelType,
+      challengeStyleType: responses.challengeStyle?.type ?? null,
       axes,
       preferences,
-      stamina,
+      stamina: {
+        ...stamina,
+        answer: responses.stamina?.answer ?? null,
+      },
+      responses,
       user: updatedUser ? this.usersService.toPublicUser(updatedUser) : null,
     };
   }
