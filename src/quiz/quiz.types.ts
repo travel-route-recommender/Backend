@@ -1,25 +1,150 @@
-/** 이동 수단 선호 (0–100) */
-export type TransportPreferences = {
-  CAR?: number;
-  PUBLIC_TRANSIT?: number;
-  WALKING?: number;
-  TAXI?: number;
-};
+/** 도전 유형 (FE 산출) */
+export type ChallengeStyleType =
+  | 'challenge_executor'
+  | 'cautious_explorer'
+  | 'stable_planner';
 
-/** 숙소 스타일 축 (0–100) */
-export type AccommodationPreference = {
-  /** 0: 잠만 자는 곳 ↔ 100: 여행의 일부 */
-  stayImportance: number;
-  /** 0: 위치 우선 ↔ 100: 시설 우선 */
-  facilityOverLocation: number;
-  /** 0: 가격 우선 ↔ 100: 편안함 우선 */
-  comfortOverPrice: number;
-};
+export type ScheduleStyleType = 'packed' | 'relaxed';
 
-export type PlaceValidationPreference = 'LESS_VALIDATED' | 'VALIDATED';
+export type ItinerarySentiment = 'like' | 'neutral' | 'dislike';
 
+export type BudgetRankItem =
+  | 'stay'
+  | 'food'
+  | 'activity'
+  | 'shopping'
+  | 'mobility';
+
+export type StaminaAnswer = 'low' | 'medium' | 'high';
 export type StaminaLevel = 'LOW' | 'NORMAL' | 'HIGH';
 
+export type ChallengeStyleScores = {
+  opennessToVariety: number;
+  excitementSeeking: number;
+  cautiousness: number;
+  exploration: number;
+};
+
+export type ScheduleStyleComponents = {
+  density: number;
+  activeRestPreference: number;
+  stamina: number;
+};
+
+export type ScheduleStyle = {
+  type: ScheduleStyleType;
+  score: number;
+  components: ScheduleStyleComponents;
+};
+
+export type ItineraryPreference = {
+  categoryScores: {
+    restaurant: number;
+    cafe: number;
+    shopping: number;
+    attraction: number;
+    local: number;
+    experience: number;
+    nature: number;
+    rest: number;
+  };
+  densityScore: number;
+};
+
+export type ChallengeStyleChapter = {
+  challengeStyleAnswers: Record<string, number>;
+  itineraryMessageAnswers: Partial<
+    Record<
+      | 'restaurant'
+      | 'cafe'
+      | 'shopping'
+      | 'attraction'
+      | 'local'
+      | 'experience'
+      | 'nature'
+      | 'rest'
+      | 'density',
+      ItinerarySentiment
+    >
+  >;
+  type: ChallengeStyleType;
+  scores: ChallengeStyleScores;
+  scheduleStyle: ScheduleStyle;
+  itineraryPreference: ItineraryPreference;
+};
+
+export type AccommodationChapter = {
+  answers: {
+    stayMeaning: number;
+    locationFacility: number;
+    comfortPrice: number;
+  };
+  scores: {
+    stayImportance: number;
+    facilityOverLocation: number;
+    comfortOverPrice: number;
+  };
+};
+
+export type StaminaChapter = {
+  answer: StaminaAnswer;
+  level: StaminaLevel;
+  score: number;
+};
+
+export type BudgetChapter = {
+  /** 코인 분배 없음. 5개 항목 순위만 */
+  ranking: BudgetRankItem[];
+};
+
+export type DiscoveryChapter = {
+  answers: {
+    landmarkImportance: number;
+    localInterest: number;
+  };
+  scores: {
+    landmarkImportance: number;
+    localInterest: number;
+  };
+};
+
+/** FE가 complete/patch로 보내는 성향 테스트 응답 */
+export type QuizResponses = {
+  surveyVersion?: number;
+  algorithmVersion?: number;
+  challengeStyle?: ChallengeStyleChapter;
+  accommodation?: AccommodationChapter;
+  stamina?: StaminaChapter;
+  budget?: BudgetChapter;
+  discovery?: DiscoveryChapter;
+};
+
+/** 여행방 공유·매칭용 4축 캐시 (0–100) */
+export type PersonalityAxes = {
+  scheduleDensity: number;
+  landmarkNecessity: number;
+  localInterest: number;
+  challenging: number;
+};
+
+/** User/test_results preferences 캐시 */
+export type QuizPreferences = {
+  surveyVersion?: number;
+  algorithmVersion?: number;
+  challengeStyleType?: ChallengeStyleType;
+  scheduleStyleType?: ScheduleStyleType;
+  challengeScores?: ChallengeStyleScores;
+  scheduleStyle?: ScheduleStyle;
+  itineraryPreference?: ItineraryPreference;
+  accommodation?: AccommodationChapter['scores'];
+  stamina?: StaminaChapter;
+  budgetRanking?: BudgetRankItem[];
+  discovery?: DiscoveryChapter['scores'];
+};
+
+export type MobilityConstraint = 'STAIRS' | 'STEEP_SLOPE' | 'LONG_WALK';
+
+/** @deprecated 구 예산 코인 카테고리 (tags API mock 유지용) */
 export type SpendingCategory =
   | 'ACCOMMODATION'
   | 'FOOD'
@@ -28,75 +153,3 @@ export type SpendingCategory =
   | 'ACTIVITY'
   | 'SHOPPING'
   | 'CAFE_REST';
-
-export type SpendingAllocation = {
-  totalCoins: number;
-  allocation: Partial<Record<SpendingCategory, number>>;
-};
-
-export type ScheduleFeatures = {
-  scheduleSpanMinutes: number;
-  scheduledMinutes: number;
-  activityMinutes: number;
-  restMinutes: number;
-  freeTimeMinutes: number;
-  placeCount: number;
-  restBlockCount: number;
-  averageStayMinutes: number;
-};
-
-export type PlaceFeatures = {
-  selectedPlaceCount: number;
-  selectedLandmarkCount: number;
-  selectedLocalPlaceCount: number;
-  averageLandmarkScore: number;
-  averageLocalScore: number;
-  landmarkAllocatedMinutes: number;
-  localAllocatedMinutes: number;
-};
-
-/** 프론트가 채운 반나절 일정 슬롯 */
-export type ScheduleSlotDraft = {
-  startMinutes: number;
-  endMinutes: number;
-  kind: 'PLACE' | 'REST' | 'FREE';
-  placeId?: string;
-  placeName?: string;
-  /** 0–100: 명소에 가까운 정도 */
-  landmarkScore?: number;
-  /** 0–100: 로컬에 가까운 정도 */
-  localScore?: number;
-};
-
-export type QuizResponses = {
-  scheduleDraft?: ScheduleSlotDraft[];
-  scheduleFeatures?: ScheduleFeatures;
-  placeFeatures?: PlaceFeatures;
-  transportPreferences?: TransportPreferences;
-  accommodationPreference?: AccommodationPreference;
-  placeValidationPreference?: PlaceValidationPreference;
-  challenging?: number;
-  staminaLevel?: StaminaLevel;
-  spendingAllocation?: SpendingAllocation;
-};
-
-/** 최종 유형을 만드는 4축 (0–100) */
-export type PersonalityAxes = {
-  scheduleDensity: number;
-  landmarkNecessity: number;
-  localInterest: number;
-  challenging: number;
-};
-
-export type QuizPreferences = {
-  transportPreferences?: TransportPreferences;
-  accommodationPreference?: AccommodationPreference;
-  placeValidationPreference?: PlaceValidationPreference;
-  challenging?: number;
-  staminaLevel?: StaminaLevel;
-  spendingAllocation?: SpendingAllocation;
-  scheduleFeatures?: ScheduleFeatures;
-  placeFeatures?: PlaceFeatures;
-};
-
-export type MobilityConstraint = 'STAIRS' | 'STEEP_SLOPE' | 'LONG_WALK';

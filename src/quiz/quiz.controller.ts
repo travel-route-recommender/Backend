@@ -54,9 +54,9 @@ export class QuizController {
 
   @Get('tags')
   @ApiOperation({
-    summary: '예산 소비 테스트용 태그/카테고리',
+    summary: '예산 순위·태그 mock',
     description:
-      '매장·장소 태그 API가 없으면 mock 데이터를 반환합니다. source=mock.',
+      '예산은 ranking(stay/food/activity/shopping/mobility)만 사용. tags는 참고용 mock.',
   })
   getTags() {
     return this.quizService.getTags();
@@ -116,9 +116,9 @@ export class QuizController {
   @UseGuards(JwtAuthGuard)
   @Post('sessions/:sessionId/complete')
   @ApiOperation({
-    summary: '테스트 완료 → rule-based 성향 진단',
+    summary: '테스트 완료 → 성향 저장',
     description:
-      '선택적으로 마지막 responses를 함께 보낼 수 있습니다. 4축 + TravelType + preferences 저장.',
+      'FE가 계산한 챕터 점수(responses)를 저장하고 TravelType·axes·preferences를 갱신합니다.',
   })
   completeSession(
     @CurrentUser() user: AuthUser,
@@ -128,7 +128,7 @@ export class QuizController {
     return this.quizService.completeSession(
       user.userId,
       sessionId,
-      dto?.responses,
+      dto.responses,
     );
   }
 

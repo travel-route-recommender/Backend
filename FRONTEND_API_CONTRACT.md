@@ -331,178 +331,94 @@ PublicUser & {
 
 신규 플로우: **세션 생성 → 중간 저장 → 완료 → 성향 조회**
 
-유형(TravelType)은 아래 **4축** rule-based로 산출합니다.
+**점수 계산은 FE.** 서버는 원본+환산값을 검증·저장하고, 여행방 공유용 4축(`axes`)·TravelType을 매핑합니다.
 
-| 축 | 설명 | 측정 |
-|----|------|------|
-| scheduleDensity | 일정 밀도 | 일정표 feature |
-| landmarkNecessity | 명소 필수도 | 일정표 place feature |
-| localInterest | 로컬 관심도 | 일정표 place feature |
-| challenging | 도전·안정 | LESS_VALIDATED / VALIDATED (+ 0–100) |
+| 챕터 | id | 내용 |
+|------|-----|------|
+| 도전·일정·활동 | `challengeStyle` | 6문항 + 활동9문항 원본, type, scores, scheduleStyle, itineraryPreference |
+| 숙소 | `accommodation` | answers 1–8 + scores 0–100 |
+| 체력 | `stamina` | answer / level / score |
+| 예산 | `budget` | ranking만 (코인 분배 없음) |
+| 명소·로컬 | `discovery` | answers 1–4 + scores 0–100 |
 
-이동·숙소·예산·체력은 **유형이 아닌 preference**로 저장합니다.
+도전 유형: `challenge_executor` | `cautious_explorer` | `stable_planner`  
+일정 유형: `packed` | `relaxed`  
+예산 ranking 5개(중복 없이): `stay` `food` `activity` `shopping` `mobility`
 
 ### GET `/quiz/steps` (비인증)
 
-테스트 스텝 메타 (schedule / transport / accommodation / validation / stamina / spending)
-
-### GET `/quiz/questions` (비인증)
-
-스텝을 문항 형태로도 노출 (안내용). 실제 응답은 sessions API 사용.
+`challengeStyle` / `accommodation` / `stamina` / `budget` / `discovery`
 
 ### GET `/quiz/tags` (비인증)
 
-예산 코인 분배용 카테고리·태그. 실데이터 없으면 `source: "mock"`.
-
-```json
-{
-  "source": "mock",
-  "categories": ["ACCOMMODATION", "FOOD", "TRANSPORT", "TOURISM", "ACTIVITY", "SHOPPING", "CAFE_REST"],
-  "tags": [
-    {
-      "id": "tag-food",
-      "category": "FOOD",
-      "label": "음식",
-      "examples": ["맛집", "로컬식당", "해산물"]
-    }
-  ]
-}
-```
+`budgetRankItems` + 참고용 mock tags. 코인 분배는 쓰지 않음.
 
 ### POST `/quiz/sessions` (인증)
 
-새 `in_progress` 세션 생성. 이전 `isLatest` 해제.
-
-```json
-{
-  "id": "...",
-  "status": "in_progress",
-  "responses": {},
-  "answeredCount": 0,
-  "totalSteps": 6,
-  "travelType": null,
-  "axes": null,
-  "preferences": null,
-  "completedAt": null
-}
-```
+새 `in_progress` 세션. `totalSteps: 5`
 
 ### PATCH `/quiz/sessions/:sessionId` (인증)
 
-응답 **중간 저장** (merge).
+챕터 partial merge.
+
+### POST `/quiz/sessions/:sessionId/complete` (인증)
+
+`responses` **필수** (전체 챕터).
 
 ```json
 {
   "responses": {
-    "scheduleDraft": [
-      {
-        "startMinutes": 540,
-        "endMinutes": 660,
-        "kind": "PLACE",
-        "placeName": "성산일출봉",
-        "landmarkScore": 90,
-        "localScore": 20
+    "surveyVersion": 9,
+    "algorithmVersion": 9,
+    "challengeStyle": {
+      "challengeStyleAnswers": { "i18": 4, "i48": 2 },
+      "itineraryMessageAnswers": { "restaurant": "like", "density": "like" },
+      "type": "cautious_explorer",
+      "scores": {
+        "opennessToVariety": 75,
+        "excitementSeeking": 88,
+        "cautiousness": 63,
+        "exploration": 81
       },
-      {
-        "startMinutes": 660,
-        "endMinutes": 720,
-        "kind": "REST"
+      "scheduleStyle": {
+        "type": "packed",
+        "score": 75,
+        "components": { "density": 100, "activeRestPreference": 50, "stamina": 50 }
+      },
+      "itineraryPreference": {
+        "categoryScores": {
+          "restaurant": 100, "cafe": 50, "shopping": 0, "attraction": 100,
+          "local": 100, "experience": 50, "nature": 100, "rest": 50
+        },
+        "densityScore": 100
       }
-    ],
-    "transportPreferences": {
-      "CAR": 20,
-      "PUBLIC_TRANSIT": 90,
-      "WALKING": 60,
-      "TAXI": 30
     },
-    "accommodationPreference": {
-      "stayImportance": 30,
-      "facilityOverLocation": 40,
-      "comfortOverPrice": 65
+    "accommodation": {
+      "answers": { "stayMeaning": 6, "locationFacility": 4, "comfortPrice": 3 },
+      "scores": { "stayImportance": 71, "facilityOverLocation": 43, "comfortOverPrice": 71 }
     },
-    "placeValidationPreference": "LESS_VALIDATED",
-    "challenging": 80,
-    "staminaLevel": "NORMAL",
-    "spendingAllocation": {
-      "totalCoins": 100,
-      "allocation": {
-        "ACCOMMODATION": 20,
-        "FOOD": 30,
-        "TRANSPORT": 10,
-        "TOURISM": 10,
-        "ACTIVITY": 20,
-        "SHOPPING": 5,
-        "CAFE_REST": 5
-      }
+    "stamina": { "answer": "medium", "level": "NORMAL", "score": 50 },
+    "budget": { "ranking": ["food", "stay", "activity", "shopping", "mobility"] },
+    "discovery": {
+      "answers": { "landmarkImportance": 3, "localInterest": 4 },
+      "scores": { "landmarkImportance": 67, "localInterest": 100 }
     }
   }
 }
 ```
 
-- `scheduleDraft`만 보내도 서버가 `scheduleFeatures` / `placeFeatures`를 추출합니다.
-- 프론트가 이미 feature를 계산했다면 `scheduleFeatures` / `placeFeatures`를 직접 넣어도 됩니다.
-
-### POST `/quiz/sessions/:sessionId/complete` (인증)
-
-완료 + 진단. body의 `responses`는 optional (마지막 merge).
-
-성공:
-
-```json
-{
-  "sessionId": "...",
-  "travelType": {
-    "name": "도전적인 탐험가",
-    "description": "...",
-    "tags": ["숨은명소", "액티비티", "로컬", "도전"],
-    "warning": "...",
-    "emoji": "🔥"
-  },
-  "axes": {
-    "scheduleDensity": 72,
-    "landmarkNecessity": 66,
-    "localInterest": 34,
-    "challenging": 80
-  },
-  "preferences": {
-    "transportPreferences": { "...": "..." },
-    "accommodationPreference": { "...": "..." },
-    "placeValidationPreference": "LESS_VALIDATED",
-    "challenging": 80,
-    "staminaLevel": "NORMAL",
-    "spendingAllocation": { "...": "..." },
-    "scheduleFeatures": { "...": "..." },
-    "placeFeatures": { "...": "..." }
-  },
-  "stamina": { "staminaLevel": "NORMAL", "staminaScore": 55 },
-  "user": { "...": "PublicUser" }
-}
-```
-
-- User.travelType / quizPreferences / personalityAxes 캐시 갱신
-- `test_results`에 이력 저장, 재응시 가능
+서버 매핑:
+- `axes.scheduleDensity` ← scheduleStyle.score
+- `axes.landmarkNecessity` ← discovery.scores.landmarkImportance
+- `axes.localInterest` ← discovery.scores.localInterest
+- `axes.challenging` ← challenge scores 평균
+- `travelType` ← challengeStyle.type
 
 ### GET `/quiz/me` (인증)
 
-최신 완료 성향 조회.
-
-### GET `/quiz/status` (인증)
-
-```json
-{
-  "completed": true,
-  "onboardingCompleted": true,
-  "sessionId": "...",
-  "status": "completed",
-  "answeredCount": 6,
-  "totalQuestions": 6,
-  "totalSteps": 6
-}
-```
+최신 완료 성향 + 원본 `responses`.
 
 ### POST `/quiz/submit` (레거시, deprecated)
-
-구 8문항 한 방 제출. 신규는 sessions 플로우 사용.
 
 ---
 
