@@ -12,10 +12,7 @@ const ALLOWED_MIME = new Set([
   'image/heif',
 ]);
 
-const DOC_ALLOWED_MIME = new Set([
-  ...ALLOWED_MIME,
-  'application/pdf',
-]);
+const DOC_ALLOWED_MIME = new Set([...ALLOWED_MIME, 'application/pdf']);
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -71,9 +68,7 @@ export class LocalUploadService implements OnModuleInit {
       throw new BadRequestException('file 파일이 필요합니다');
     }
     if (!DOC_ALLOWED_MIME.has(file.mimetype)) {
-      throw new BadRequestException(
-        '지원 형식: jpeg, png, webp, heic, pdf',
-      );
+      throw new BadRequestException('지원 형식: jpeg, png, webp, heic, pdf');
     }
     if (file.size > DOCUMENT_MAX_BYTES) {
       throw new BadRequestException('파일 크기는 10MB 이하여야 합니다');
@@ -139,14 +134,16 @@ export class LocalUploadService implements OnModuleInit {
   async deleteByPublicUrl(imageUrl: string) {
     if (!imageUrl?.startsWith('/uploads/')) return;
     const relative = imageUrl.replace(/^\/uploads\//, '');
-    const absolutePath = path.join(this.uploadRoot, relative);
+    const absolutePath = path.resolve(this.uploadRoot, relative);
     // prevent path traversal
-    if (!absolutePath.startsWith(this.uploadRoot)) return;
+    const relativeToRoot = path.relative(this.uploadRoot, absolutePath);
+    if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+      return;
+    }
     try {
       await fs.unlink(absolutePath);
-    } catch {
-      // already gone
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
   }
 }
-

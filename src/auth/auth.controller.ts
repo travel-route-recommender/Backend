@@ -6,6 +6,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   JoinByInviteDto,
@@ -26,6 +27,7 @@ import {
 } from '../common/dto/swagger-responses.dto';
 
 @ApiTags('인증')
+@Throttle({ default: { limit: 10, ttl: 60_000 } })
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -82,7 +84,7 @@ export class AuthController {
   })
   @ApiCreatedResponse({ type: AuthJoinByInviteDto })
   joinByInvite(@Body() dto: JoinByInviteDto) {
-    return this.authService.joinByInvite(dto.inviteCode, dto.nickname);
+    return this.authService.joinByInvite(dto);
   }
 
   @Post('oauth/kakao')

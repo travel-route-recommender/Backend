@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../schemas/user.schema';
 
 @Injectable()
@@ -11,11 +11,19 @@ export class UsersService {
     return this.userModel.findById(id).exec();
   }
 
+  async existsById(id: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(id)) return false;
+    return Boolean(await this.userModel.exists({ _id: id }));
+  }
+
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
   }
 
-  async findByOAuth(provider: string, oauthId: string): Promise<UserDocument | null> {
+  async findByOAuth(
+    provider: string,
+    oauthId: string,
+  ): Promise<UserDocument | null> {
     return this.userModel.findOne({ oauthProvider: provider, oauthId }).exec();
   }
 
@@ -23,7 +31,10 @@ export class UsersService {
     return this.userModel.create(data);
   }
 
-  async updateById(id: string, data: Partial<User>): Promise<UserDocument | null> {
+  async updateById(
+    id: string,
+    data: Partial<User>,
+  ): Promise<UserDocument | null> {
     return this.userModel.findByIdAndUpdate(id, data, { new: true }).exec();
   }
 
@@ -32,20 +43,20 @@ export class UsersService {
     limit?: number;
     q?: string;
     includeGuests?: boolean;
+    allowedUserIds: Types.ObjectId[];
   }) {
     const page = Math.max(1, options.page ?? 1);
     const limit = Math.min(100, Math.max(1, options.limit ?? 50));
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = {
+      _id: { $in: options.allowedUserIds },
+    };
 
     if (!options.includeGuests) {
       filter.isGuest = { $ne: true };
     }
     if (options.q?.trim()) {
       const q = options.q.trim();
-      filter.$or = [
-        { nickname: { $regex: q, $options: 'i' } },
-        { email: { $regex: q, $options: 'i' } },
-      ];
+      filter.nickname = { $regex: q, $options: 'i' };
     }
 
     const [docs, total] = await Promise.all([
@@ -59,8 +70,19 @@ export class UsersService {
     ]);
 
     return {
-      data: docs.map((u) => this.toPublicUser(u)),
+      data: docs.map((u) => this.toDirectoryUser(u)),
       meta: { total, page, limit },
+    };
+  }
+
+  private toDirectoryUser(user: UserDocument) {
+    return {
+      id: user._id.toString(),
+      nickname: user.nickname,
+      profileImageUrl: user.profileImageUrl ?? null,
+      travelType: user.travelType ?? null,
+      onboardingCompleted: user.onboardingCompleted,
+      isGuest: user.isGuest,
     };
   }
 
@@ -88,8 +110,10 @@ export class UsersService {
       mobilityConstraints: user.mobilityConstraints ?? [],
       birthYear: user.birthYear ?? null,
       interestTags: user.interestTags ?? [],
-      createdAt: (user as UserDocument & { createdAt?: Date }).createdAt ?? null,
-      updatedAt: (user as UserDocument & { updatedAt?: Date }).updatedAt ?? null,
+      createdAt:
+        (user as UserDocument & { createdAt?: Date }).createdAt ?? null,
+      updatedAt:
+        (user as UserDocument & { updatedAt?: Date }).updatedAt ?? null,
     };
   }
 }

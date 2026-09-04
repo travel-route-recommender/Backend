@@ -8,10 +8,21 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import axios from 'axios';
 import { UsersService } from '../users/users.service';
-import { LoginDto, SignupDto } from './dto/auth.dto';
+import { JoinByInviteDto, LoginDto, SignupDto } from './dto/auth.dto';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { TravelRoom, TravelRoomDocument } from '../schemas/travel-room.schema';
+
+interface KakaoUserResponse {
+  id: string | number;
+  kakao_account?: {
+    email?: string;
+    profile?: {
+      nickname?: string;
+      profile_image_url?: string;
+    };
+  };
+}
 
 @Injectable()
 export class AuthService {
@@ -30,12 +41,20 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
+    const agreedAt = new Date();
     const user = await this.usersService.create({
       email: dto.email.toLowerCase(),
       passwordHash,
       nickname: dto.nickname,
       onboardingCompleted: false,
       isGuest: false,
+      legalAgreements: {
+        termsVersion: dto.termsVersion,
+        termsAgreedAt: agreedAt,
+        privacyConsentVersion: dto.privacyConsentVersion,
+        privacyConsentAgreedAt: agreedAt,
+        overFourteenConfirmedAt: agreedAt,
+      },
     });
 
     return this.issueTokens(user._id.toString(), user.email);
@@ -59,7 +78,12 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify<{ sub: string; email?: string }>(
         refreshToken,
-        { secret: this.config.get('JWT_REFRESH_SECRET', 'change-me-refresh-secret') },
+        {
+          secret: this.config.get(
+            'JWT_REFRESH_SECRET',
+            'change-me-refresh-secret',
+          ),
+        },
       );
 
       const user = await this.usersService.findById(payload.sub);
@@ -83,16 +107,24 @@ export class AuthService {
     return { success: true };
   }
 
-  async joinByInvite(inviteCode: string, nickname: string) {
-    const room = await this.roomModel.findOne({ inviteCode });
+  async joinByInvite(dto: JoinByInviteDto) {
+    const room = await this.roomModel.findOne({ inviteCode: dto.inviteCode });
     if (!room) {
       throw new UnauthorizedException('Invalid invite code');
     }
 
+    const agreedAt = new Date();
     const user = await this.usersService.create({
-      nickname,
+      nickname: dto.nickname,
       isGuest: true,
       onboardingCompleted: false,
+      legalAgreements: {
+        termsVersion: dto.termsVersion,
+        termsAgreedAt: agreedAt,
+        privacyConsentVersion: dto.privacyConsentVersion,
+        privacyConsentAgreedAt: agreedAt,
+        overFourteenConfirmedAt: agreedAt,
+      },
     });
 
     room.members.push({
@@ -118,20 +150,20 @@ export class AuthService {
   }
 
   async kakaoLogin(accessToken: string) {
-    const { data } = await axios.get('https://kapi.kakao.com/v2/user/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const { data } = await axios.get<KakaoUserResponse>(
+      'https://kapi.kakao.com/v2/user/me',
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
 
     const oauthId = String(data.id);
     const kakaoAccount = data.kakao_account ?? {};
     const profile = kakaoAccount.profile ?? {};
-    const email = kakaoAccount.email as string | undefined;
-    const nickname =
-      (profile.nickname as string | undefined) ?? `kakao_${oauthId.slice(-6)}`;
+    const email = kakaoAccount.email;
+    const nickname = profile.nickname ?? `kakao_${oauthId.slice(-6)}`;
 
-    let user = email
-      ? await this.usersService.findByEmail(email)
-      : null;
+    let user = email ? await this.usersService.findByEmail(email) : null;
     if (!user) {
       user = await this.usersService.findByOAuth('kakao', oauthId);
     }

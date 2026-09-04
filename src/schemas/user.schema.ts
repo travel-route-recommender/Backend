@@ -21,6 +21,24 @@ export class TravelType {
   emoji: string;
 }
 
+@Schema({ _id: false })
+export class LegalAgreements {
+  @Prop({ required: true })
+  termsVersion: string;
+
+  @Prop({ required: true })
+  termsAgreedAt: Date;
+
+  @Prop({ required: true })
+  privacyConsentVersion: string;
+
+  @Prop({ required: true })
+  privacyConsentAgreedAt: Date;
+
+  @Prop({ required: true })
+  overFourteenConfirmedAt: Date;
+}
+
 @Schema({ timestamps: true, collection: 'users' })
 export class User {
   @Prop({ sparse: true, lowercase: true, trim: true })
@@ -77,6 +95,9 @@ export class User {
 
   @Prop({ default: false })
   isGuest: boolean;
+
+  @Prop({ type: LegalAgreements })
+  legalAgreements?: LegalAgreements;
 
   @Prop({ type: [String], default: [] })
   refreshTokens: string[];
