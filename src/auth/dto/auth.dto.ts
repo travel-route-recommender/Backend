@@ -1,38 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  Equals,
-  IsEmail,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-
-export const CURRENT_TERMS_VERSION = '1.0';
-export const CURRENT_PRIVACY_CONSENT_VERSION = '1.0';
-
-class RequiredLegalAgreementsDto {
-  @ApiProperty({
-    example: CURRENT_TERMS_VERSION,
-    enum: [CURRENT_TERMS_VERSION],
-  })
-  @IsString()
-  @MaxLength(20)
-  @Equals(CURRENT_TERMS_VERSION)
-  termsVersion: string;
-
-  @ApiProperty({
-    example: CURRENT_PRIVACY_CONSENT_VERSION,
-    enum: [CURRENT_PRIVACY_CONSENT_VERSION],
-  })
-  @IsString()
-  @MaxLength(20)
-  @Equals(CURRENT_PRIVACY_CONSENT_VERSION)
-  privacyConsentVersion: string;
-
-  @ApiProperty({ example: true, description: '만 14세 이상 본인 확인' })
-  @Equals(true)
-  overFourteenConfirmed: true;
-}
+import { IsEmail, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({ example: 'test@example.com' })
@@ -45,7 +12,7 @@ export class LoginDto {
   password: string;
 }
 
-export class SignupDto extends RequiredLegalAgreementsDto {
+export class SignupDto {
   @ApiProperty({ example: '윤지', minLength: 2 })
   @IsString()
   @MinLength(2)
@@ -55,9 +22,9 @@ export class SignupDto extends RequiredLegalAgreementsDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'secure-password', minLength: 12 })
+  @ApiProperty({ example: 'password123', minLength: 6 })
   @IsString()
-  @MinLength(12)
+  @MinLength(6)
   password: string;
 }
 
@@ -70,7 +37,7 @@ export class RefreshTokenDto {
   refreshToken: string;
 }
 
-export class JoinByInviteDto extends RequiredLegalAgreementsDto {
+export class JoinByInviteDto {
   @ApiProperty({ example: 'ABCD1234', description: '여행방 초대 코드 (8자)' })
   @IsString()
   inviteCode: string;
