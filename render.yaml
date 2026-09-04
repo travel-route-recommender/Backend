@@ -2,7 +2,7 @@ services:
   - type: web
     name: backend-1
     runtime: node
-    branch: main
+    branch: ios_release
     buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
     healthCheckPath: /api/v1/health/ready

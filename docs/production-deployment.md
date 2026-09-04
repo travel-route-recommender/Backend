@@ -35,7 +35,7 @@ React Native 요청은 Origin 헤더가 없으므로 `CORS_ORIGINS`가 비어 �
 ## 배포 순서
 
 1. `ios_release`의 CI 통과를 확인한다.
-2. `ios_release`를 `main`에 병합한다.
+2. Render 서비스의 배포 브랜치를 `ios_release`로 설정한다.
 3. Render 배포 로그에서 build와 readiness 성공을 확인한다.
 4. `/api/v1/health/ready`가 200인지 확인한다.
 5. 신규 테스트 계정으로 가입, 로그인, 토큰 갱신, 계정 삭제를 검증한다.
