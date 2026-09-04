@@ -14,13 +14,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_ACCESS_SECRET', 'change-me-access-secret'),
+      secretOrKey: config.get<string>(
+        'JWT_ACCESS_SECRET',
+        'change-me-access-secret',
+      ),
     });
   }
 
   validate(payload: JwtPayload): AuthUser {
-    if (!payload.sub) {
-      throw new UnauthorizedException('Invalid token');
+    if (!payload.sub || (payload.typ && payload.typ !== 'access')) {
+      throw new UnauthorizedException({
+        code: 'INVALID_ACCESS_TOKEN',
+        message: '로그인 정보가 만료되었습니다. 다시 로그인해 주세요.',
+      });
     }
     return { userId: payload.sub, email: payload.email };
   }

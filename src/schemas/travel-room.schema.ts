@@ -92,6 +92,17 @@ export class RoomMember {
   @Prop({ type: TravelType })
   travelTypeSnapshot?: TravelType;
 
+  @Prop({ type: Object })
+  personalityAxesSnapshot?: {
+    scheduleDensity: number;
+    landmarkNecessity: number;
+    localInterest: number;
+    challenging: number;
+  };
+
+  @Prop({ type: [String], default: undefined })
+  interestTagsSnapshot?: string[];
+
   @Prop({ type: MemberConstraintSnapshot })
   mobilityConstraints?: MemberConstraintSnapshot;
 
@@ -382,6 +393,14 @@ export class TravelRoom {
   @Prop({ default: 0 })
   factsVersion: number;
 
+  /** Bounded receipts make standalone-Mongo document fallbacks idempotent. */
+  @Prop({ type: [Object], default: [] })
+  documentMutationReceipts: Array<{
+    id: string;
+    kind: 'upload' | 'delete';
+    appliedAt: Date;
+  }>;
+
   /** last clientMutationId for idempotent schedule retries */
   @Prop()
   lastScheduleMutationId?: string;
@@ -389,4 +408,3 @@ export class TravelRoom {
 
 export const TravelRoomSchema = SchemaFactory.createForClass(TravelRoom);
 TravelRoomSchema.index({ 'members.userId': 1, status: 1 });
-TravelRoomSchema.index({ inviteCode: 1 });

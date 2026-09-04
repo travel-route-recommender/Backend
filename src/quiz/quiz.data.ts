@@ -13,8 +13,7 @@ export const QUIZ_STEPS = [
   {
     id: 'challengeStyle',
     title: '도전 · 일정 · 활동',
-    description:
-      '도전·안정 성향과 활동 종류·일정 밀도 선호를 측정합니다.',
+    description: '도전·안정 성향과 활동 종류·일정 밀도 선호를 측정합니다.',
   },
   {
     id: 'accommodation',
@@ -47,7 +46,7 @@ export const BUDGET_RANK_ITEMS = [
   'mobility',
 ] as const;
 
-/** @deprecated tags API mock 유지 */
+/** 예산 선호 입력에 사용하는 제품 분류 체계 */
 export const SPENDING_CATEGORIES: SpendingCategory[] = [
   'ACCOMMODATION',
   'FOOD',
@@ -58,8 +57,8 @@ export const SPENDING_CATEGORIES: SpendingCategory[] = [
   'CAFE_REST',
 ];
 
-/** 예산 테스트용 mock 태그 (실데이터 없으면 사용) */
-export const MOCK_SPENDING_TAGS = [
+/** 예산 선호 화면의 고정 선택지 */
+export const SPENDING_TAGS = [
   {
     id: 'tag-accommodation',
     category: 'ACCOMMODATION' as SpendingCategory,
@@ -156,8 +155,7 @@ const TRAVEL_TYPES: Record<string, TravelType> = {
   },
   balanced: {
     name: '균형 잡힌 여행자',
-    description:
-      '명소와 로컬, 여유와 밀도 사이에서 균형을 찾는 스타일이에요.',
+    description: '명소와 로컬, 여유와 밀도 사이에서 균형을 찾는 스타일이에요.',
     tags: ['명소', '로컬', '카페', '맛집'],
     warning: '일정이 한쪽으로 치우치면 불만족할 수 있어요.',
     emoji: '⚖️',
@@ -180,9 +178,7 @@ export function computePersonalityAxes(
   const landmarkNecessity = clamp(
     responses.discovery?.scores?.landmarkImportance ?? 50,
   );
-  const localInterest = clamp(
-    responses.discovery?.scores?.localInterest ?? 50,
-  );
+  const localInterest = clamp(responses.discovery?.scores?.localInterest ?? 50);
   const scores = responses.challengeStyle?.scores;
   const challenging = clamp(
     scores
@@ -220,9 +216,7 @@ export function deriveTravelType(
   return TRAVEL_TYPES.balanced;
 }
 
-export function buildPreferences(
-  responses: QuizResponses,
-): QuizPreferences {
+export function buildPreferences(responses: QuizResponses): QuizPreferences {
   return {
     surveyVersion: responses.surveyVersion,
     algorithmVersion: responses.algorithmVersion,
@@ -308,7 +302,9 @@ export function missingSteps(responses: QuizResponses): string[] {
 }
 
 /** @deprecated 레거시 8문항용 — rooms 매칭은 travelType.tags 사용 */
-export function calculateTravelType(answers: Record<string, string>): TravelType {
+export function calculateTravelType(
+  answers: Record<string, string>,
+): TravelType {
   let aCount = 0;
   let bCount = 0;
   for (const value of Object.values(answers)) {
@@ -323,21 +319,33 @@ export function calculateTravelType(answers: Record<string, string>): TravelType
 export function calculateMatchResult(
   types: Array<{ name: string; tags: string[] } | undefined>,
 ) {
-  const valid = types.filter(Boolean) as Array<{ name: string; tags: string[] }>;
+  const valid = types.filter(Boolean) as Array<{
+    name: string;
+    tags: string[];
+  }>;
   if (valid.length < 2) {
     return {
-      compatibilityScore: 0,
+      available: false,
+      compatibilityScore: null,
       matchingAreas: [],
       adjustmentAreas: [],
       avoidAreas: [],
       summary: '동행자 정보가 부족합니다.',
       memberCount: valid.length,
       pairCount: 0,
+      evaluatedPairCount: 0,
+      dataCoverage: 0,
     };
   }
 
   const pairScores: number[] = [];
   const matchingTagCounts = new Map<string, number>();
+  const tagMemberCounts = new Map<string, number>();
+  for (const type of valid) {
+    for (const tag of new Set(type.tags)) {
+      tagMemberCounts.set(tag, (tagMemberCounts.get(tag) ?? 0) + 1);
+    }
+  }
 
   for (let i = 0; i < valid.length; i += 1) {
     for (let j = i + 1; j < valid.length; j += 1) {
@@ -345,78 +353,42 @@ export function calculateMatchResult(
       const setB = new Set(valid[j].tags);
       const matching = [...setA].filter((t) => setB.has(t));
       const allTags = new Set([...setA, ...setB]);
-      const score =
-        allTags.size === 0
-          ? 50
-          : Math.round((matching.length / allTags.size) * 100);
-      pairScores.push(score);
+      if (allTags.size > 0) {
+        pairScores.push(Math.round((matching.length / allTags.size) * 100));
+      }
       for (const tag of matching) {
         matchingTagCounts.set(tag, (matchingTagCounts.get(tag) ?? 0) + 1);
       }
     }
   }
 
-  const compatibilityScore = Math.round(
-    pairScores.reduce((a, b) => a + b, 0) / pairScores.length,
-  );
+  const compatibilityScore = pairScores.length
+    ? Math.round(pairScores.reduce((a, b) => a + b, 0) / pairScores.length)
+    : null;
   const matchingAreas = [...matchingTagCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([tag]) => tag)
     .slice(0, 8);
 
   return {
+    available: compatibilityScore != null,
     compatibilityScore,
     matchingAreas,
-    adjustmentAreas: ['일정 밀도', '명소 vs 로컬'],
-    avoidAreas:
-      compatibilityScore < 60 ? ['과도한 이동', '액티비티 중심 일정'] : [],
+    adjustmentAreas: [...tagMemberCounts.entries()]
+      .filter(([, count]) => count > 0 && count < valid.length)
+      .sort((a, b) => b[1] - a[1])
+      .map(([tag]) => tag)
+      .slice(0, 8),
+    avoidAreas: [],
     summary:
-      valid.length === 2
-        ? compatibilityScore >= 70
-          ? '두 분은 장소 취향이 잘 맞지만, 여행 속도에서 차이가 있을 수 있어요.'
-          : '취향 차이가 있어 조율이 필요해요.'
-        : compatibilityScore >= 70
-          ? `${valid.length}명의 취향이 대체로 잘 맞아요. 공통 관심사를 중심으로 일정을 잡아보세요.`
-          : `${valid.length}명 사이에 취향 차이가 있어요. 공통 태그와 절충 구간을 먼저 잡으면 좋아요.`,
+      compatibilityScore == null
+        ? '비교할 선호 태그가 없어 점수를 계산하지 않았습니다.'
+        : `${valid.length}명의 선호 태그를 모든 조합으로 비교한 결과입니다.`,
     memberCount: valid.length,
-    pairCount: pairScores.length,
+    pairCount: (valid.length * (valid.length - 1)) / 2,
+    evaluatedPairCount: pairScores.length,
+    dataCoverage: pairScores.length / ((valid.length * (valid.length - 1)) / 2),
   };
-}
-
-export function buildAdjustmentPlan() {
-  return {
-    aiMessage:
-      '두 분 모두 분위기 좋은 장소를 좋아하지만, 일정 밀도는 조금 달라요. ' +
-      '오전에는 대표 장소 2곳을 보고, 오후에는 로컬 카페와 산책 시간을 넉넉히 넣어볼게요.',
-    summaryPoints: [
-      '오전: 핵심 관광지 중심',
-      '오후: 여유로운 카페·산책',
-      '이동: 가까운 동선 위주',
-    ],
-  };
-}
-
-export function buildCourses(destinationName = '여행지') {
-  return [
-    {
-      id: 'course-1',
-      title: `${destinationName} 감성 코스`,
-      subtitle: '카페와 산책 중심',
-      places: ['해변', '카페 거리', '전망대'],
-      tags: ['여유', '사진', '카페'],
-      compatibilityScore: 88,
-      isRecommended: true,
-    },
-    {
-      id: 'course-2',
-      title: `${destinationName} 알차게 코스`,
-      subtitle: '맛집과 액티비티',
-      places: ['시장', '맛집', '액티비티'],
-      tags: ['맛집', '액티비티'],
-      compatibilityScore: 75,
-      isRecommended: false,
-    },
-  ];
 }
 
 /** 레거시 e2e/프론트 호환: 스텝을 문항 형태로도 노출 */

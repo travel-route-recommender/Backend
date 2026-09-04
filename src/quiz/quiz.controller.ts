@@ -54,9 +54,9 @@ export class QuizController {
 
   @Get('tags')
   @ApiOperation({
-    summary: '예산 순위·태그 mock',
+    summary: '예산 우선순위·선호 태그 선택지',
     description:
-      '예산은 ranking(stay/food/activity/shopping/mobility)만 사용. tags는 참고용 mock.',
+      '예산 금액을 추정하지 않으며 stay/food/activity/shopping/mobility 우선순위와 제품 분류 태그를 제공합니다.',
   })
   getTags() {
     return this.quizService.getTags();
@@ -76,7 +76,8 @@ export class QuizController {
   @Get('me')
   @ApiOperation({
     summary: '내 최신 성향 조회',
-    description: '완료된 테스트의 travelType · axes · preferences를 반환합니다.',
+    description:
+      '완료된 테스트의 travelType · axes · preferences를 반환합니다.',
   })
   getMe(@CurrentUser() user: AuthUser) {
     return this.quizService.getMe(user.userId);
@@ -105,11 +106,7 @@ export class QuizController {
     @Param('sessionId') sessionId: string,
     @Body() dto: PatchQuizSessionDto,
   ) {
-    return this.quizService.patchSession(
-      user.userId,
-      sessionId,
-      dto.responses,
-    );
+    return this.quizService.patchSession(user.userId, sessionId, dto.responses);
   }
 
   @ApiBearerAuth()

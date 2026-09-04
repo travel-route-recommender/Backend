@@ -17,6 +17,17 @@ type SignedPayload = {
   exp: number;
 };
 
+function isSignedPayload(value: unknown): value is SignedPayload {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.path === 'string' &&
+    typeof candidate.roomId === 'string' &&
+    typeof candidate.exp === 'number' &&
+    Number.isFinite(candidate.exp)
+  );
+}
+
 @Injectable()
 export class SignedUrlService {
   private readonly secret: string;
@@ -49,15 +60,35 @@ export class SignedUrlService {
   }
 
   private fromB64url(input: string) {
-    const pad = input.length % 4 === 0 ? '' : '='.repeat(4 - (input.length % 4));
+    const pad =
+      input.length % 4 === 0 ? '' : '='.repeat(4 - (input.length % 4));
     const b64 = input.replace(/-/g, '+').replace(/_/g, '/') + pad;
     return Buffer.from(b64, 'base64');
   }
 
   private signRaw(data: string) {
-    return this.b64url(
-      createHmac('sha256', this.secret).update(data).digest(),
+    return this.b64url(createHmac('sha256', this.secret).update(data).digest());
+  }
+
+  private assertRoomPublicPath(publicPath: string, roomId: string) {
+    const normalized = path.posix.normalize(publicPath);
+    const allowedPrefixes = [
+      `/uploads/tickets/${roomId}/`,
+      `/uploads/documents/${roomId}/`,
+    ];
+    const prefix = allowedPrefixes.find((candidate) =>
+      normalized.startsWith(candidate),
     );
+    const filename = prefix ? normalized.slice(prefix.length) : '';
+    if (
+      normalized !== publicPath ||
+      publicPath.includes('\\') ||
+      !prefix ||
+      !filename ||
+      filename.includes('/')
+    ) {
+      throw new ForbiddenException('다운로드할 수 없는 여행방 파일입니다.');
+    }
   }
 
   /**
@@ -69,11 +100,13 @@ export class SignedUrlService {
     roomId: string;
     ttlSec?: number;
   }) {
-    if (!opts.publicPath.startsWith('/uploads/')) {
-      throw new ForbiddenException('서명 가능한 경로가 아닙니다');
-    }
-    const exp =
-      Math.floor(Date.now() / 1000) + (opts.ttlSec ?? this.defaultTtlSec);
+    this.assertRoomPublicPath(opts.publicPath, opts.roomId);
+    const requestedTtl = opts.ttlSec ?? this.defaultTtlSec;
+    const ttlSec =
+      Number.isFinite(requestedTtl) && requestedTtl >= 60
+        ? Math.min(Math.floor(requestedTtl), 86_400)
+        : 900;
+    const exp = Math.floor(Date.now() / 1000) + ttlSec;
     const payload: SignedPayload = {
       path: opts.publicPath,
       roomId: opts.roomId,
@@ -87,55 +120,64 @@ export class SignedUrlService {
       url: `${this.appBaseUrl}/api/v1/files/download?token=${encodeURIComponent(token)}`,
       path: opts.publicPath,
       expiresAt: new Date(exp * 1000).toISOString(),
-      expiresInSec: opts.ttlSec ?? this.defaultTtlSec,
+      expiresInSec: ttlSec,
     };
   }
 
-  verifyToken(token: string): SignedPayload {
-    const [body, sig] = token.split('.');
-    if (!body || !sig) {
-      throw new UnauthorizedException('Invalid download token');
+  verifyToken(token: unknown): SignedPayload {
+    if (
+      typeof token !== 'string' ||
+      token.length === 0 ||
+      token.length > 4096
+    ) {
+      throw this.invalidToken();
     }
+    const parts = token.split('.');
+    if (parts.length !== 2) {
+      throw this.invalidToken();
+    }
+    const [body, sig] = parts;
+    if (!body || !sig) throw this.invalidToken();
     const expected = this.signRaw(body);
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      throw new UnauthorizedException('Invalid download token');
+      throw this.invalidToken();
     }
-    let payload: SignedPayload;
+    let parsed: unknown;
     try {
-      payload = JSON.parse(this.fromB64url(body).toString('utf8'));
+      parsed = JSON.parse(this.fromB64url(body).toString('utf8')) as unknown;
     } catch {
-      throw new UnauthorizedException('Invalid download token');
+      throw this.invalidToken();
     }
-    if (!payload?.path || !payload.roomId || !payload.exp) {
-      throw new UnauthorizedException('Invalid download token');
+    if (!isSignedPayload(parsed) || !parsed.path || !parsed.roomId) {
+      throw this.invalidToken();
     }
-    if (payload.exp < Math.floor(Date.now() / 1000)) {
+    const payload = parsed;
+    if (payload.exp <= Math.floor(Date.now() / 1000)) {
       throw new UnauthorizedException({
         code: 'DOWNLOAD_TOKEN_EXPIRED',
         message: '다운로드 링크가 만료되었습니다. 다시 발급하세요.',
       });
     }
-    if (!payload.path.startsWith('/uploads/')) {
-      throw new ForbiddenException('Invalid path');
-    }
+    this.assertRoomPublicPath(payload.path, payload.roomId);
     return payload;
   }
 
   resolveAbsolutePath(publicPath: string) {
     const relative = publicPath.replace(/^\/uploads\//, '');
-    const absolutePath = path.join(this.uploads.getUploadRoot(), relative);
-    if (!absolutePath.startsWith(this.uploads.getUploadRoot())) {
-      throw new ForbiddenException('Invalid path');
+    const uploadRoot = path.resolve(this.uploads.getUploadRoot());
+    const absolutePath = path.resolve(uploadRoot, relative);
+    if (!absolutePath.startsWith(`${uploadRoot}${path.sep}`)) {
+      throw new ForbiddenException('다운로드 파일 경로가 올바르지 않습니다.');
     }
     if (!existsSync(absolutePath)) {
-      throw new NotFoundException('File not found');
+      throw new NotFoundException('다운로드할 파일을 찾을 수 없습니다.');
     }
     return absolutePath;
   }
 
-  async openDownloadStream(token: string) {
+  async openDownloadStream(token: unknown) {
     const payload = this.verifyToken(token);
     const absolutePath = this.resolveAbsolutePath(payload.path);
     const stat = await fs.stat(absolutePath);
@@ -147,5 +189,12 @@ export class SignedUrlService {
       size: stat.size,
       filename: path.basename(absolutePath),
     };
+  }
+
+  private invalidToken() {
+    return new UnauthorizedException({
+      code: 'INVALID_DOWNLOAD_TOKEN',
+      message: '다운로드 링크가 올바르지 않습니다. 다시 발급해 주세요.',
+    });
   }
 }

@@ -10,7 +10,6 @@ import {
   IsNumber,
   IsObject,
   IsOptional,
-  IsString,
   Max,
   Min,
   ValidateNested,
@@ -24,7 +23,7 @@ const CHALLENGE_TYPES = [
 
 const SCHEDULE_TYPES = ['packed', 'relaxed'] as const;
 
-const SENTIMENTS = ['like', 'neutral', 'dislike'] as const;
+type Sentiment = 'like' | 'neutral' | 'dislike';
 
 const BUDGET_ITEMS = [
   'stay',
@@ -83,7 +82,7 @@ export class ScheduleStyleComponentsDto {
   stamina: number;
 }
 
-export class ScheduleStyleDto {
+export class QuizScheduleStyleDto {
   @ApiProperty({ enum: SCHEDULE_TYPES, example: 'packed' })
   @IsIn(SCHEDULE_TYPES)
   type: (typeof SCHEDULE_TYPES)[number];
@@ -101,12 +100,24 @@ export class ScheduleStyleDto {
 }
 
 export class ItineraryCategoryScoresDto {
-  @ApiProperty({ example: 100 }) @IsNumber() @Min(0) @Max(100) restaurant: number;
+  @ApiProperty({ example: 100 })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  restaurant: number;
   @ApiProperty({ example: 50 }) @IsNumber() @Min(0) @Max(100) cafe: number;
   @ApiProperty({ example: 0 }) @IsNumber() @Min(0) @Max(100) shopping: number;
-  @ApiProperty({ example: 100 }) @IsNumber() @Min(0) @Max(100) attraction: number;
+  @ApiProperty({ example: 100 })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  attraction: number;
   @ApiProperty({ example: 100 }) @IsNumber() @Min(0) @Max(100) local: number;
-  @ApiProperty({ example: 50 }) @IsNumber() @Min(0) @Max(100) experience: number;
+  @ApiProperty({ example: 50 })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  experience: number;
   @ApiProperty({ example: 100 }) @IsNumber() @Min(0) @Max(100) nature: number;
   @ApiProperty({ example: 50 }) @IsNumber() @Min(0) @Max(100) rest: number;
 }
@@ -147,7 +158,7 @@ export class ChallengeStyleChapterDto {
     description: '활동 종류·일정 밀도 9문항 원본',
   })
   @IsObject()
-  itineraryMessageAnswers: Record<string, (typeof SENTIMENTS)[number] | string>;
+  itineraryMessageAnswers: Record<string, Sentiment>;
 
   @ApiProperty({ enum: CHALLENGE_TYPES, example: 'cautious_explorer' })
   @IsIn(CHALLENGE_TYPES)
@@ -158,10 +169,10 @@ export class ChallengeStyleChapterDto {
   @Type(() => ChallengeStyleScoresDto)
   scores: ChallengeStyleScoresDto;
 
-  @ApiProperty({ type: ScheduleStyleDto })
+  @ApiProperty({ type: QuizScheduleStyleDto })
   @ValidateNested()
-  @Type(() => ScheduleStyleDto)
-  scheduleStyle: ScheduleStyleDto;
+  @Type(() => QuizScheduleStyleDto)
+  scheduleStyle: QuizScheduleStyleDto;
 
   @ApiProperty({ type: ItineraryPreferenceDto })
   @ValidateNested()
@@ -240,7 +251,8 @@ export class StaminaChapterDto {
 export class BudgetChapterDto {
   @ApiProperty({
     example: ['food', 'stay', 'activity', 'shopping', 'mobility'],
-    description: '5개 항목 중복 없이 순위. stay/food/activity/shopping/mobility',
+    description:
+      '5개 항목 중복 없이 순위. stay/food/activity/shopping/mobility',
   })
   @IsArray()
   @ArrayMinSize(5)

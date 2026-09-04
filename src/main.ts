@@ -6,11 +6,19 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
+import { APP_LINK_ROUTE_EXCLUSIONS } from './common/app-links.controller';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
+  const trustProxyHops = Number(
+    configService.get<string>('TRUST_PROXY_HOPS', isProduction ? '1' : '0'),
+  );
+  if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
+    app.set('trust proxy', trustProxyHops);
+  }
 
   const uploadDir = join(
     process.cwd(),
@@ -19,13 +27,18 @@ async function bootstrap() {
   if (!existsSync(uploadDir)) {
     mkdirSync(uploadDir, { recursive: true });
   }
-  // 하위호환: UPLOADS_PUBLIC=false 이면 정적 /uploads 비활성 → 서명 URL만
+  // 개발 환경만 하위호환 공개. 운영은 명시적으로 켜지 않는 한 서명 URL만 허용한다.
   const uploadsPublic =
-    configService.get<string>('UPLOADS_PUBLIC', 'true') !== 'false';
+    configService.get<string>(
+      'UPLOADS_PUBLIC',
+      isProduction ? 'false' : 'true',
+    ) === 'true';
   if (uploadsPublic) {
     app.useStaticAssets(uploadDir, { prefix: '/uploads' });
   }
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: [...APP_LINK_ROUTE_EXCLUSIONS],
+  });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(
     new ValidationPipe({
@@ -34,7 +47,15 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-  app.enableCors();
+  const configuredOrigins = configService
+    .get<string>('CORS_ORIGINS', '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: isProduction ? configuredOrigins : true,
+    credentials: false,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('Tourmate API')
@@ -105,10 +126,7 @@ Tour 목록·Kakao 검색·후보 \`place\`·저장 목록이 같은 필드를 �
     .addTag('인증', '회원가입 · 로그인 · 토큰 갱신 · 게스트 초대 입장')
     .addTag('유저', '내 프로필 · 여행 타입 · 온보딩 완료')
     .addTag('온보딩', '면허·자차·이동 제약·관심 태그 (두리 테스트와 별개)')
-    .addTag(
-      '두리 테스트',
-      '세션·중간저장·완료 · 4축 rule-based TravelType + preference',
-    )
+    .addTag('두리 테스트', '세션·중간저장·완료 · 여행 성향과 선호 결과')
     .addTag(
       '관광 탐색 · TourAPI',
       '한국관광공사 KorService2. 관광지·축제·숙박·상세의 메인 소스. contentId 기준.',
@@ -124,7 +142,7 @@ Tour 목록·Kakao 검색·후보 \`place\`·저장 목록이 같은 필드를 �
     .addTag('인기 여행지', '인기 Top 여행지 (popularityScore)')
     .addTag('여행방', '방 생성·초대·후보·일정·궁합')
     .addTag('초대', '초대 미리보기 · 기존 유저 초대 수락')
-    .addTag('두리 도우미', '장소 추천·일정 초안·분석 리포트 (rule-based MVP)')
+    .addTag('두리 도우미', '검증 가능한 일정 데이터 기반 분석 리포트')
     .addTag(
       '모빌리티 · 길찾기',
       'Kakao Mobility 자동차 경로·이동시간 BFF. REST 키 필요. 막차 미포함.',
@@ -132,21 +150,28 @@ Tour 목록·Kakao 검색·후보 \`place\`·저장 목록이 같은 필드를 �
     .addTag('저장', '개인 장소 저장(Save) 목록')
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'Tourmate API Docs',
-    swaggerOptions: {
-      docExpansion: 'list',
-      tagsSorter: 'none',
-      operationsSorter: 'alpha',
-      persistAuthorization: true,
-      filter: true,
-      displayRequestDuration: true,
-    },
-  });
+  const swaggerEnabled =
+    configService.get<string>(
+      'SWAGGER_ENABLED',
+      isProduction ? 'false' : 'true',
+    ) === 'true';
+  if (swaggerEnabled) {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document, {
+      customSiteTitle: 'Tourmate API Docs',
+      swaggerOptions: {
+        docExpansion: 'list',
+        tagsSorter: 'none',
+        operationsSorter: 'alpha',
+        persistAuthorization: true,
+        filter: true,
+        displayRequestDuration: true,
+      },
+    });
+  }
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
 }
 
-bootstrap();
+void bootstrap();

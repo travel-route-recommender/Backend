@@ -13,9 +13,22 @@ export function assertYmd(value: string, field: string) {
   if (!YMD.test(value)) {
     throw new BadRequestException(`${field}는 YYYY-MM-DD 형식이어야 합니다.`);
   }
-  const d = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(d.getTime())) {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
     throw new BadRequestException(`${field}가 유효한 날짜가 아닙니다.`);
+  }
+}
+
+export function assertTimeZone(value: string, field = 'timezone') {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+  } catch {
+    throw new BadRequestException(`${field}이 올바른 IANA 시간대가 아닙니다.`);
   }
 }
 
@@ -28,7 +41,9 @@ export function assertTimeRange(startTime: string, endTime: string) {
   assertHhMm(startTime, 'startTime');
   assertHhMm(endTime, 'endTime');
   if (timeToMinutes(startTime) >= timeToMinutes(endTime)) {
-    throw new BadRequestException('startTime은 endTime보다 이전이어야 합니다.');
+    throw new BadRequestException(
+      '일정 종료 시간은 시작 시간보다 늦어야 합니다.',
+    );
   }
 }
 
@@ -68,19 +83,13 @@ export function dateToDay(startDate: Date, date: string): number {
   assertYmd(date, 'date');
   const start = startOfUtcDay(startDate);
   const target = new Date(`${date}T00:00:00.000Z`);
-  const diff = Math.round(
-    (target.getTime() - start.getTime()) / 86_400_000,
-  );
+  const diff = Math.round((target.getTime() - start.getTime()) / 86_400_000);
   return diff + 1;
 }
 
-export function assertValidDay(
-  day: number,
-  startDate?: Date,
-  endDate?: Date,
-) {
+export function assertValidDay(day: number, startDate?: Date, endDate?: Date) {
   if (!Number.isInteger(day) || day < 1) {
-    throw new BadRequestException('day는 1 이상의 정수여야 합니다.');
+    throw new BadRequestException('DAY 번호는 1 이상의 정수여야 합니다.');
   }
   const maxDay = tripDayCount(startDate, endDate);
   if (maxDay != null && day > maxDay) {
@@ -89,7 +98,9 @@ export function assertValidDay(
     );
   }
   if (maxDay == null && day > 30) {
-    throw new BadRequestException('day는 30을 초과할 수 없습니다.');
+    throw new BadRequestException(
+      '여행 일정은 최대 30일차까지 만들 수 있습니다.',
+    );
   }
 }
 

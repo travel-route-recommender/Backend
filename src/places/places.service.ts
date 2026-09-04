@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
@@ -9,8 +14,15 @@ import { Place, PlaceDocument } from '../schemas/place.schema';
 
 const KAKAO_SEARCH_TTL = 5 * 60 * 1000; // 5m
 
+type KakaoKeywordResponse = {
+  documents?: Record<string, string>[];
+  meta?: { total_count?: number };
+};
+
 @Injectable()
 export class PlacesService {
+  private readonly logger = new Logger(PlacesService.name);
+
   constructor(
     @InjectModel(Place.name) private placeModel: Model<PlaceDocument>,
     private config: ConfigService,
@@ -25,8 +37,22 @@ export class PlacesService {
     page?: number;
     limit?: number;
   }) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const page =
+      Number.isInteger(query.page) && (query.page ?? 0) > 0
+        ? Math.min(45, query.page as number)
+        : 1;
+    const limit =
+      Number.isInteger(query.limit) && (query.limit ?? 0) > 0
+        ? Math.min(50, query.limit as number)
+        : 20;
+    if (
+      (query.lat !== undefined &&
+        (!Number.isFinite(query.lat) || query.lat < -90 || query.lat > 90)) ||
+      (query.lng !== undefined &&
+        (!Number.isFinite(query.lng) || query.lng < -180 || query.lng > 180))
+    ) {
+      throw new BadRequestException('유효한 위도와 경도를 입력해 주세요.');
+    }
     const kakaoKey = this.config.get<string>('KAKAO_REST_API_KEY');
 
     if (query.q && kakaoKey) {
@@ -45,33 +71,39 @@ export class PlacesService {
       if (cached) return cached;
 
       try {
-        const { data } = await axios.get(
+        const { data } = await axios.get<KakaoKeywordResponse>(
           'https://dapi.kakao.com/v2/local/search/keyword.json',
           {
             headers: { Authorization: `KakaoAK ${kakaoKey}` },
             params: {
               query: query.q,
               page,
-              size: limit,
+              size: Math.min(15, limit),
               x: query.lng,
               y: query.lat,
             },
+            timeout: 8000,
           },
         );
 
-        const documents = (data.documents ?? []) as Record<string, string>[];
+        const documents = data.documents ?? [];
         const places = await this.bulkUpsertKakaoPlaces(documents);
         const result = {
           data: places.map((p) => fromMongoPlace(p!)),
           meta: {
             total: data.meta?.total_count ?? places.length,
             page,
-            limit,
+            limit: Math.min(15, limit),
           },
         };
         await this.cache.set(cacheKey, result, KAKAO_SEARCH_TTL);
         return result;
-      } catch {
+      } catch (error) {
+        this.logger.warn(
+          `카카오 장소 검색 실패로 로컬 검색을 사용합니다: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
         // fall through to local search
       }
     }
@@ -97,13 +129,13 @@ export class PlacesService {
 
   async findById(id: string) {
     const place = await this.placeModel.findById(id);
-    if (!place) throw new NotFoundException('Place not found');
+    if (!place) throw new NotFoundException('장소를 찾을 수 없습니다.');
     return fromMongoPlace(place);
   }
 
   async findSimilar(placeId: string) {
     const doc = await this.placeModel.findById(placeId);
-    if (!doc) throw new NotFoundException('Place not found');
+    if (!doc) throw new NotFoundException('장소를 찾을 수 없습니다.');
 
     const filter: Record<string, unknown> = {
       _id: { $ne: doc._id },

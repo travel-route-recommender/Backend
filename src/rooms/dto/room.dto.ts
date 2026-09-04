@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -100,6 +101,7 @@ export class AddCandidateDto {
   @ApiPropertyOptional({ example: '꼭 가고 싶어요' })
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   note?: string;
 }
 
@@ -126,12 +128,6 @@ export class ScheduleStyleDto {
   })
   @IsEnum(['jType', 'pType'])
   style: 'jType' | 'pType';
-}
-
-export class SelectCourseDto {
-  @ApiProperty({ example: 'course-1' })
-  @IsString()
-  courseId: string;
 }
 
 export class ReorderScheduleDto {
@@ -219,7 +215,10 @@ export class ScheduleItemDto {
   @IsEnum(['must', 'optional', 'skip'])
   priority?: 'must' | 'optional' | 'skip';
 
-  @ApiPropertyOptional({ example: 1, description: '1 이상 정수 (date 없을 때)' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: '1 이상 정수 (date 없을 때)',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -236,11 +235,15 @@ export class ScheduleItemDto {
   @ApiPropertyOptional({ example: 33.458 })
   @IsOptional()
   @IsNumber()
+  @Min(-90)
+  @Max(90)
   lat?: number;
 
   @ApiPropertyOptional({ example: 126.942 })
   @IsOptional()
   @IsNumber()
+  @Min(-180)
+  @Max(180)
   lng?: number;
 
   @ApiProperty({
@@ -316,7 +319,10 @@ export class UpdateScheduleItemDto {
   @IsString()
   reason?: string;
 
-  @ApiPropertyOptional({ enum: ['must', 'optional', 'skip'], example: 'optional' })
+  @ApiPropertyOptional({
+    enum: ['must', 'optional', 'skip'],
+    example: 'optional',
+  })
   @IsOptional()
   @IsEnum(['must', 'optional', 'skip'])
   priority?: 'must' | 'optional' | 'skip';
@@ -335,11 +341,15 @@ export class UpdateScheduleItemDto {
   @ApiPropertyOptional({ example: 33.458 })
   @IsOptional()
   @IsNumber()
+  @Min(-90)
+  @Max(90)
   lat?: number;
 
   @ApiPropertyOptional({ example: 126.942 })
   @IsOptional()
   @IsNumber()
+  @Min(-180)
+  @Max(180)
   lng?: number;
 
   @ApiPropertyOptional({
@@ -468,11 +478,15 @@ export class PlaceAnchorDto {
   @ApiPropertyOptional({ example: 33.49 })
   @IsOptional()
   @IsNumber()
+  @Min(-90)
+  @Max(90)
   lat?: number;
 
   @ApiPropertyOptional({ example: 126.53 })
   @IsOptional()
   @IsNumber()
+  @Min(-180)
+  @Max(180)
   lng?: number;
 
   @ApiPropertyOptional()
@@ -517,28 +531,29 @@ export class UpdatePlanningDto {
   @IsEnum(['car', 'transit', 'walk', 'mixed'])
   transportMode?: 'car' | 'transit' | 'walk' | 'mixed';
 
-  @ApiPropertyOptional({ example: '21:00' })
+  @ApiPropertyOptional({ type: String, example: '21:00', nullable: true })
   @IsOptional()
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
-  returnDeadline?: string;
+  returnDeadline?: string | null;
 
-  @ApiPropertyOptional({ example: 15 })
+  @ApiPropertyOptional({ type: Number, example: 15, nullable: true })
   @IsOptional()
   @IsInt()
   @Min(0)
-  travelBufferMinutes?: number;
+  travelBufferMinutes?: number | null;
 
-  @ApiPropertyOptional({ example: 10 })
+  @ApiPropertyOptional({ type: Number, example: 10, nullable: true })
   @IsOptional()
   @IsInt()
   @Min(0)
-  prepBufferMinutes?: number;
+  prepBufferMinutes?: number | null;
 
   @ApiPropertyOptional({
     example: true,
     description: '전달한 versioned 필드를 confirmedAt 갱신',
   })
   @IsOptional()
+  @IsBoolean()
   confirm?: boolean;
 }
 
@@ -600,24 +615,32 @@ export class ScheduleItemInputDto {
   @ApiPropertyOptional({ example: 33.458 })
   @IsOptional()
   @IsNumber()
+  @Min(-90)
+  @Max(90)
   lat?: number;
 
   @ApiPropertyOptional({ example: 126.942 })
   @IsOptional()
   @IsNumber()
+  @Min(-180)
+  @Max(180)
   lng?: number;
 
   @ApiPropertyOptional({ example: false })
   @IsOptional()
+  @IsBoolean()
   locked?: boolean;
 }
 
 export class ScheduleDayDto {
   @ApiProperty({ example: 1 })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   day: number;
 
   @ApiProperty({ type: [ScheduleItemInputDto] })
+  @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => ScheduleItemInputDto)
   items: ScheduleItemInputDto[];
@@ -642,6 +665,8 @@ export class BatchScheduleDto {
       },
     ],
   })
+  @IsArray()
+  @ArrayMaxSize(366)
   @ValidateNested({ each: true })
   @Type(() => ScheduleDayDto)
   days: ScheduleDayDto[];
@@ -676,6 +701,7 @@ export class OptimizeDto {
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
+  @IsBoolean()
   minimizeTravel?: boolean;
 }
 
@@ -735,6 +761,8 @@ export class UpdateTripDatesDto {
 
 export class ApplyScheduleProposalDto {
   @ApiProperty({ type: [ScheduleDayDto] })
+  @IsArray()
+  @ArrayMaxSize(366)
   @ValidateNested({ each: true })
   @Type(() => ScheduleDayDto)
   days: ScheduleDayDto[];
@@ -747,14 +775,13 @@ export class ApplyScheduleProposalDto {
   @Min(0)
   expectedVersion: number;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 0,
-    description: '분석 시점 factsVersion. 바뀌었으면 409',
+    description: '분석 시점 factsVersion (필수). 바뀌었으면 409',
   })
-  @IsOptional()
   @IsInt()
   @Min(0)
-  expectedFactsVersion?: number;
+  expectedFactsVersion: number;
 
   @ApiPropertyOptional()
   @IsOptional()

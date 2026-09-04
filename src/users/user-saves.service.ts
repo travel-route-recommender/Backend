@@ -14,7 +14,7 @@ export class UserSavesService {
 
   async savePlace(userId: string, placeId: string, roomId?: string) {
     const place = await this.placeModel.findById(placeId);
-    if (!place) throw new NotFoundException('Place not found');
+    if (!place) throw new NotFoundException('장소를 찾을 수 없습니다.');
 
     return this.saveModel.findOneAndUpdate(
       {
@@ -27,7 +27,7 @@ export class UserSavesService {
         placeId: new Types.ObjectId(placeId),
         roomId: roomId ? new Types.ObjectId(roomId) : undefined,
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
   }
 
@@ -50,7 +50,9 @@ export class UserSavesService {
     return saves.map((s) => ({
       id: s._id.toString(),
       savedAt: (s as unknown as { savedAt: Date }).savedAt,
-      place: s.placeId ? fromMongoPlace(s.placeId as unknown as PlaceDocument) : null,
+      place: s.placeId
+        ? fromMongoPlace(s.placeId as unknown as PlaceDocument)
+        : null,
     }));
   }
 }

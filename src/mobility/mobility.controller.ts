@@ -32,29 +32,4 @@ export class MobilityController {
   directions(@Body() dto: DirectionsRequestDto) {
     return this.mobilityService.directions(dto);
   }
-
-  @Post('transit')
-  @ApiOperation({
-    summary: '대중교통·막차 (stub)',
-    description:
-      '프로바이더/키 미정. available:false 반환. 자차는 POST /mobility/directions 사용.',
-  })
-  transit(
-    @Body()
-    body: {
-      origin?: { lat: number; lng: number };
-      destination?: { lat: number; lng: number };
-      departureAt?: string;
-    },
-  ) {
-    return {
-      available: false,
-      reason: 'TRANSIT_PROVIDER_NOT_CONFIGURED',
-      origin: body.origin ?? null,
-      destination: body.destination ?? null,
-      departureAt: body.departureAt ?? null,
-      legs: [],
-      lastDepartureAt: null,
-    };
-  }
 }

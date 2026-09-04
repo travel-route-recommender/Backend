@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -51,7 +44,12 @@ export class UsersController {
       '전체 회원 PublicUser 목록. Bearer 없이 호출 가능. passwordHash/refreshTokens 제외. 기본은 게스트 제외.',
   })
   @ApiQuery({ name: 'page', required: false, example: '1' })
-  @ApiQuery({ name: 'limit', required: false, example: '50', description: '최대 100' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: '50',
+    description: '최대 100',
+  })
   @ApiQuery({
     name: 'q',
     required: false,

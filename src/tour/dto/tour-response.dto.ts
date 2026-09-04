@@ -31,7 +31,9 @@ export class TourPlaceImageDto {
   @ApiProperty({ example: 'http://tong.visitkorea.or.kr/.../image.jpg' })
   url: string;
 
-  @ApiPropertyOptional({ example: 'http://tong.visitkorea.or.kr/.../thumb.jpg' })
+  @ApiPropertyOptional({
+    example: 'http://tong.visitkorea.or.kr/.../thumb.jpg',
+  })
   thumbnailUrl?: string;
 
   @ApiPropertyOptional({ example: '성산일출봉 전경' })
@@ -99,7 +101,11 @@ export class TourFestivalPageDto {
 }
 
 export class TourSyncCardDto extends TourPlaceCardDto {
-  @ApiProperty({ example: '1', nullable: true, description: '노출 여부 플래그' })
+  @ApiProperty({
+    example: '1',
+    nullable: true,
+    description: '노출 여부 플래그',
+  })
   showFlag: string | null;
 
   @ApiProperty({
@@ -333,7 +339,10 @@ export class TourCongestionDto {
   @ApiProperty({ example: '경복궁' })
   name: string;
 
-  @ApiProperty({ type: [TourCongestionDayDto], description: '향후 예측일 배열' })
+  @ApiProperty({
+    type: [TourCongestionDayDto],
+    description: '향후 예측일 배열',
+  })
   days: TourCongestionDayDto[];
 
   @ApiProperty({

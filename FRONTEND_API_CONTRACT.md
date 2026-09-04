@@ -3,13 +3,13 @@
 TripMatch / Tourmate NestJS 백엔드 연동용 계약 문서.  
 실제 코드(`src/`) 기준이며, secret 값은 포함하지 않습니다.
 
-| 항목 | 값 |
-|------|-----|
-| Base URL | `http://localhost:3000/api/v1` |
-| Swagger UI | `http://localhost:3000/api/docs` |
-| OpenAPI JSON | [`openapi.json`](./openapi.json) |
-| Auth | `Authorization: Bearer {accessToken}` |
-| Refresh | **JSON body만** (Cookie 없음) |
+| 항목         | 값                                    |
+| ------------ | ------------------------------------- |
+| Base URL     | `http://localhost:3000/api/v1`        |
+| Swagger UI   | `http://localhost:3000/api/docs`      |
+| OpenAPI JSON | [`openapi.json`](./openapi.json)      |
+| Auth         | `Authorization: Bearer {accessToken}` |
+| Refresh      | **JSON body만** (Cookie 없음)         |
 
 ---
 
@@ -32,18 +32,19 @@ npm run start:dev
 
 ### 환경 변수 (이름만 — `.env.example` 참고)
 
-| 이름 | 필수 | 기본/설명 |
-|------|------|-----------|
-| `PORT` | | `3000` |
-| `MONGODB_URI` | ✅ | `mongodb://127.0.0.1:27017/tourmate` |
-| `JWT_ACCESS_SECRET` | ✅ | access JWT 서명 |
-| `JWT_REFRESH_SECRET` | ✅ | refresh JWT 서명 |
-| `JWT_ACCESS_EXPIRES_IN` | | `15m` |
-| `JWT_REFRESH_EXPIRES_IN` | | `7d` |
-| `KAKAO_REST_API_KEY` | | 서버 전용. Local 검색 + Mobility 길찾기. 없으면 검색은 DB seed, 길찾기는 503 |
-| `EXPO_PUBLIC_KAKAO_MAP_JAVASCRIPT_KEY` | | **프론트(Expo) 전용**. 지도 SDK용. 백엔드 길찾기에 사용 불가 |
-| `APP_BASE_URL` | | `http://localhost:3000` |
-| `INVITE_LINK_BASE` | | `tripmatch://invite` → 링크 `{BASE}/{code}` |
+| 이름                                   | 필수    | 기본/설명                                                                    |
+| -------------------------------------- | ------- | ---------------------------------------------------------------------------- |
+| `PORT`                                 |         | `3000`                                                                       |
+| `MONGODB_URI`                          | ✅      | `mongodb://127.0.0.1:27017/tourmate`                                         |
+| `JWT_ACCESS_SECRET`                    | ✅      | access JWT 서명                                                              |
+| `JWT_REFRESH_SECRET`                   | ✅      | refresh JWT 서명                                                             |
+| `UPLOAD_SIGNING_SECRET`                | 운영 ✅ | JWT와 다른 32자 이상 파일 URL 서명 값                                        |
+| `JWT_ACCESS_EXPIRES_IN`                |         | `15m`                                                                        |
+| `JWT_REFRESH_EXPIRES_IN`               |         | `7d`                                                                         |
+| `KAKAO_REST_API_KEY`                   |         | 서버 전용. Local 검색 + Mobility 길찾기. 없으면 검색은 DB seed, 길찾기는 503 |
+| `EXPO_PUBLIC_KAKAO_MAP_JAVASCRIPT_KEY` |         | **프론트(Expo) 전용**. 지도 SDK용. 백엔드 길찾기에 사용 불가                 |
+| `APP_BASE_URL`                         |         | `http://localhost:3000`                                                      |
+| `INVITE_LINK_BASE`                     |         | `tripmatch://invite` → 링크 `{BASE}/{code}`                                  |
 
 ### Seed
 
@@ -94,17 +95,17 @@ npm run openapi:generate
 }
 ```
 
-| 항목 | 실제 동작 |
-|------|-----------|
-| access 필드명 | `accessToken` |
-| refresh 필드명 | `refreshToken` |
-| 사용자 포함 | ✅ `user` (PublicUser) |
-| access 만료 | `JWT_ACCESS_EXPIRES_IN` (기본 **15m**) |
-| refresh 만료 | `JWT_REFRESH_EXPIRES_IN` (기본 **7d**) |
-| refresh 전달 | **JSON body** `{ "refreshToken": "..." }` |
-| Cookie | ❌ 사용 안 함 |
-| Authorization | `Authorization: Bearer {accessToken}` |
-| refresh 저장 | User.refreshTokens 최대 5개 (슬라이딩) |
+| 항목           | 실제 동작                                 |
+| -------------- | ----------------------------------------- |
+| access 필드명  | `accessToken`                             |
+| refresh 필드명 | `refreshToken`                            |
+| 사용자 포함    | ✅ `user` (PublicUser)                    |
+| access 만료    | `JWT_ACCESS_EXPIRES_IN` (기본 **15m**)    |
+| refresh 만료   | `JWT_REFRESH_EXPIRES_IN` (기본 **7d**)    |
+| refresh 전달   | **JSON body** `{ "refreshToken": "..." }` |
+| Cookie         | ❌ 사용 안 함                             |
+| Authorization  | `Authorization: Bearer {accessToken}`     |
+| refresh 저장   | User.refreshTokens 최대 5개 (슬라이딩)    |
 
 ### POST `/auth/signup`
 
@@ -133,8 +134,8 @@ npm run openapi:generate
 
 프론트 권장 흐름:
 
-1. API 401 → `POST /auth/refresh` with stored refreshToken  
-2. 성공 시 두 토큰 모두 교체 저장  
+1. API 401 → `POST /auth/refresh` with stored refreshToken
+2. 성공 시 두 토큰 모두 교체 저장
 3. refresh도 401이면 로그인 화면
 
 ### POST `/auth/logout` (Bearer 필요)
@@ -187,7 +188,10 @@ Nest 기본 + `HttpException` 형태. **커스텀 `code` 필드는 없음.**
 ```json
 {
   "statusCode": 400,
-  "message": ["email must be an email", "password must be longer than or equal to 6 characters"],
+  "message": [
+    "email must be an email",
+    "password must be longer than or equal to 6 characters"
+  ],
   "error": "Bad Request"
 }
 ```
@@ -202,17 +206,17 @@ Nest 기본 + `HttpException` 형태. **커스텀 `code` 필드는 없음.**
 }
 ```
 
-| HTTP | 대표 상황 |
-|------|-----------|
-| 400 | ValidationPipe (`whitelist` + `forbidNonWhitelisted`) |
-| 401 | JWT 없음/만료, 로그인 실패, refresh 실패 |
-| 403 | room 비멤버, invite 재발급 owner 아님 |
-| 404 | room / place / schedule item 없음 |
-| 409 | 이메일 중복 |
-| 429 | **미구현** (외부 API rate limit 전용 응답 없음) |
-| 500 | 미처리 예외 |
+| HTTP | 대표 상황                                             |
+| ---- | ----------------------------------------------------- |
+| 400  | ValidationPipe (`whitelist` + `forbidNonWhitelisted`) |
+| 401  | JWT 없음/만료, 로그인 실패, refresh 실패              |
+| 403  | room 비멤버, invite 재발급 owner 아님                 |
+| 404  | room / place / schedule item 없음                     |
+| 409  | 이메일 중복, 일정·사실·TODO revision 충돌, 동시 변경  |
+| 429  | 로그인·토큰·두리 분석 등 요청 한도 초과               |
+| 500  | 미처리 예외                                           |
 
-요청한 `{ statusCode, code, message, details }` 포맷은 **현재 미적용**. 필요하면 백엔드에서 filter 추가 가능.
+예외 응답은 `{ statusCode, message, error, code?, ...details }` 형태로 정규화됩니다. 예기치 않은 서버 오류의 내부 내용은 응답에 노출하지 않고 서버 로그에만 남깁니다.
 
 ---
 
@@ -261,12 +265,12 @@ PublicUser & {
 
 **인증 불필요.** PublicUser 배열 (passwordHash/refreshTokens 제외).
 
-| Query | 기본 | 설명 |
-|-------|------|------|
-| `page` | 1 | |
-| `limit` | 50 | 최대 100 |
-| `q` | | nickname / email 부분 검색 |
-| `includeGuests` | false | `true`면 게스트 포함 |
+| Query           | 기본  | 설명                       |
+| --------------- | ----- | -------------------------- |
+| `page`          | 1     |                            |
+| `limit`         | 50    | 최대 100                   |
+| `q`             |       | nickname / email 부분 검색 |
+| `includeGuests` | false | `true`면 게스트 포함       |
 
 ```json
 {
@@ -333,13 +337,13 @@ PublicUser & {
 
 **점수 계산은 FE.** 서버는 원본+환산값을 검증·저장하고, 여행방 공유용 4축(`axes`)·TravelType을 매핑합니다.
 
-| 챕터 | id | 내용 |
-|------|-----|------|
+| 챕터           | id               | 내용                                                                     |
+| -------------- | ---------------- | ------------------------------------------------------------------------ |
 | 도전·일정·활동 | `challengeStyle` | 6문항 + 활동9문항 원본, type, scores, scheduleStyle, itineraryPreference |
-| 숙소 | `accommodation` | answers 1–8 + scores 0–100 |
-| 체력 | `stamina` | answer / level / score |
-| 예산 | `budget` | ranking만 (코인 분배 없음) |
-| 명소·로컬 | `discovery` | answers 1–4 + scores 0–100 |
+| 숙소           | `accommodation`  | answers 1–8 + scores 0–100                                               |
+| 체력           | `stamina`        | answer / level / score                                                   |
+| 예산           | `budget`         | ranking만 (코인 분배 없음)                                               |
+| 명소·로컬      | `discovery`      | answers 1–4 + scores 0–100                                               |
 
 도전 유형: `challenge_executor` | `cautious_explorer` | `stable_planner`  
 일정 유형: `packed` | `relaxed`  
@@ -351,7 +355,7 @@ PublicUser & {
 
 ### GET `/quiz/tags` (비인증)
 
-`budgetRankItems` + 참고용 mock tags. 코인 분배는 쓰지 않음.
+`budgetRankItems` + 화면에서 사용하는 제품 분류 선택지. 코인 분배는 쓰지 않음.
 
 ### POST `/quiz/sessions` (인증)
 
@@ -383,22 +387,38 @@ PublicUser & {
       "scheduleStyle": {
         "type": "packed",
         "score": 75,
-        "components": { "density": 100, "activeRestPreference": 50, "stamina": 50 }
+        "components": {
+          "density": 100,
+          "activeRestPreference": 50,
+          "stamina": 50
+        }
       },
       "itineraryPreference": {
         "categoryScores": {
-          "restaurant": 100, "cafe": 50, "shopping": 0, "attraction": 100,
-          "local": 100, "experience": 50, "nature": 100, "rest": 50
+          "restaurant": 100,
+          "cafe": 50,
+          "shopping": 0,
+          "attraction": 100,
+          "local": 100,
+          "experience": 50,
+          "nature": 100,
+          "rest": 50
         },
         "densityScore": 100
       }
     },
     "accommodation": {
       "answers": { "stayMeaning": 6, "locationFacility": 4, "comfortPrice": 3 },
-      "scores": { "stayImportance": 71, "facilityOverLocation": 43, "comfortOverPrice": 71 }
+      "scores": {
+        "stayImportance": 71,
+        "facilityOverLocation": 43,
+        "comfortOverPrice": 71
+      }
     },
     "stamina": { "answer": "medium", "level": "NORMAL", "score": 50 },
-    "budget": { "ranking": ["food", "stay", "activity", "shopping", "mobility"] },
+    "budget": {
+      "ranking": ["food", "stay", "activity", "shopping", "mobility"]
+    },
     "discovery": {
       "answers": { "landmarkImportance": 3, "localInterest": 4 },
       "scores": { "landmarkImportance": 67, "localInterest": 100 }
@@ -408,6 +428,7 @@ PublicUser & {
 ```
 
 서버 매핑:
+
 - `axes.scheduleDensity` ← scheduleStyle.score
 - `axes.landmarkNecessity` ← discovery.scores.landmarkImportance
 - `axes.localInterest` ← discovery.scores.localInterest
@@ -442,7 +463,7 @@ PublicUser & {
 
 날짜/여행지는 이후:
 
-- `PATCH /rooms/:id` → title, startDate, endDate, status  
+- `PATCH /rooms/:id` → title, startDate, endDate, status
 - `PATCH /rooms/:id/destination` → `{ name, regionCode?, lat?, lng? }`
 
 ### Room 응답 (`formatRoom`)
@@ -451,7 +472,12 @@ PublicUser & {
 {
   "id": "...",
   "title": "제주 여행",
-  "destination": { "name": "제주", "regionCode": "JEJU", "lat": 33.5, "lng": 126.5 },
+  "destination": {
+    "name": "제주",
+    "regionCode": "JEJU",
+    "lat": 33.5,
+    "lng": 126.5
+  },
   "startDate": "2026-07-10T00:00:00.000Z",
   "endDate": "2026-07-13T00:00:00.000Z",
   "status": "ongoing",
@@ -536,13 +562,13 @@ PATCH /rooms/:roomId/destination
 
 프론트 고정 목록 예시 (ID 없이 name 사용):
 
-| name | regionCode | lat | lng |
-|------|------------|-----|-----|
-| 제주 | JEJU | 33.4996 | 126.5312 |
-| 부산 | BUSAN | 35.1796 | 129.0756 |
-| 강릉 | GANGNEUNG | 37.7519 | 128.8761 |
-| 경주 | GYEONGJU | 35.8562 | 129.2247 |
-| 서울 | SEOUL | 37.5665 | 126.9780 |
+| name | regionCode | lat     | lng      |
+| ---- | ---------- | ------- | -------- |
+| 제주 | JEJU       | 33.4996 | 126.5312 |
+| 부산 | BUSAN      | 35.1796 | 129.0756 |
+| 강릉 | GANGNEUNG  | 37.7519 | 128.8761 |
+| 경주 | GYEONGJU   | 35.8562 | 129.2247 |
+| 서울 | SEOUL      | 37.5665 | 126.9780 |
 
 ---
 
@@ -552,16 +578,16 @@ TourAPI(`/tour/places/*`)와 Kakao/DB(`/places/*`), 후보·저장의 `place` �
 
 ```ts
 type CommonPlace = {
-  id: string;                 // placeId ?? `${source}:${externalId}`
-  placeId: string | null;     // Mongo _id (Tour 목록은 상세 전 null)
-  externalId: string;         // Tour contentId | Kakao id
+  id: string; // placeId ?? `${source}:${externalId}`
+  placeId: string | null; // Mongo _id (Tour 목록은 상세 전 null)
+  externalId: string; // Tour contentId | Kakao id
   source: 'tour' | 'kakao' | 'manual';
   name: string;
   address: string | null;
   lat: number | null;
   lng: number | null;
   thumbnailUrl: string | null;
-  images: string[];           // URL만
+  images: string[]; // URL만
   category: string | null;
   contentTypeId: number | null;
   contentTypeLabel: string | null;
@@ -569,49 +595,49 @@ type CommonPlace = {
   phone: string | null;
   placeUrl: string | null;
   description: string | null;
-  distanceMeters?: number;    // nearby 등
+  distanceMeters?: number; // nearby 등
 };
 ```
 
 ### FE 사용 규칙
 
-| 하고 싶은 일 | 필드 |
-|--------------|------|
-| 리스트 key | `id` |
-| 후보/저장 추가 | `placeId` (있으면) |
+| 하고 싶은 일                           | 필드                                            |
+| -------------------------------------- | ----------------------------------------------- |
+| 리스트 key                             | `id`                                            |
+| 후보/저장 추가                         | `placeId` (있으면)                              |
 | Tour 목록에서 후보 추가 (placeId null) | `{ tourContentId: externalId, contentTypeId? }` |
-| 지도 좌표 | `lat` / `lng` (**latitude/longitude 아님**) |
-| 썸네일 | `thumbnailUrl` 또는 `images[0]` |
+| 지도 좌표                              | `lat` / `lng` (**latitude/longitude 아님**)     |
+| 썸네일                                 | `thumbnailUrl` 또는 `images[0]`                 |
 
 ### Breaking (구 필드 → 신 필드)
 
-| 구 (Tour) | 신 (CommonPlace) |
-|-----------|------------------|
-| `id` = contentId | `externalId` = contentId, `id` = client key |
-| `source: 'TOUR_API'` | `source: 'tour'` |
-| `latitude` / `longitude` | `lat` / `lng` |
-| `tel` / `homepage` | `phone` / `placeUrl` |
-| detail `images[{url}]` | `images: string[]` + `gallery` (메타) |
-| Kakao `_id` | `placeId` (= `id`) |
+| 구 (Tour)                | 신 (CommonPlace)                            |
+| ------------------------ | ------------------------------------------- |
+| `id` = contentId         | `externalId` = contentId, `id` = client key |
+| `source: 'TOUR_API'`     | `source: 'tour'`                            |
+| `latitude` / `longitude` | `lat` / `lng`                               |
+| `tel` / `homepage`       | `phone` / `placeUrl`                        |
+| detail `images[{url}]`   | `images: string[]` + `gallery` (메타)       |
+| Kakao `_id`              | `placeId` (= `id`)                          |
 
 ### GET `/places/search`
 
-| Query | 설명 |
-|-------|------|
-| `q` | 검색어 |
-| `category` | 로컬 DB 필터 (Kakao 경로에서는 미사용) |
-| `lat` / `lng` | number (Kakao `y`/`x`로 전달) |
-| `page` | 기본 1 |
-| `limit` | 기본 20 |
-| radius | **미지원** |
+| Query         | 설명                                   |
+| ------------- | -------------------------------------- |
+| `q`           | 검색어                                 |
+| `category`    | 로컬 DB 필터 (Kakao 경로에서는 미사용) |
+| `lat` / `lng` | number (Kakao `y`/`x`로 전달)          |
+| `page`        | 기본 1                                 |
+| `limit`       | 기본 20                                |
+| radius        | **미지원**                             |
 
 응답: `{ data: CommonPlace[], meta: { total, page, limit } }`
 
 ### 데이터 소스
 
-- **TourAPI** → `/tour/places/*` (메인 관광 탐색). 상세 시 Mongo upsert → `placeId` 부여  
-- **Kakao Local** → `/places/search` (카페·상점 보조). upsert 후 항상 `placeId` 있음  
-- 실패/무키 → 로컬 Mongo `places`  
+- **TourAPI** → `/tour/places/*` (메인 관광 탐색). 상세 시 Mongo upsert → `placeId` 부여
+- **Kakao Local** → `/places/search` (카페·상점 보조). upsert 후 항상 `placeId` 있음
+- 실패/무키 → 로컬 Mongo `places`
 
 ### Batch
 
@@ -627,15 +653,15 @@ type CommonPlace = {
 
 ## 8. User Saves
 
-| Method | Path | 비고 |
-|--------|------|------|
-| GET | `/users/me/saves` | `{ id, savedAt, place }` — Place 포함 |
-| POST | `/users/me/saves` | `{ placeId, roomId? }` upsert |
-| DELETE | `/users/me/saves/:placeId` | `roomId: null` 개인 저장만 삭제 |
+| Method | Path                       | 비고                                  |
+| ------ | -------------------------- | ------------------------------------- |
+| GET    | `/users/me/saves`          | `{ id, savedAt, place }` — Place 포함 |
+| POST   | `/users/me/saves`          | `{ placeId, roomId? }` upsert         |
+| DELETE | `/users/me/saves/:placeId` | `roomId: null` 개인 저장만 삭제       |
 
-- 개인 Save ≠ room Candidate (분리 유지)  
-- `roomId`는 컨텍스트 태깅용 (후보 API 아님)  
-- 중복 저장: upsert (에러 없음)  
+- 개인 Save ≠ room Candidate (분리 유지)
+- `roomId`는 컨텍스트 태깅용 (후보 API 아님)
+- 중복 저장: upsert (에러 없음)
 - 없는 삭제: 그래도 `{ success: true }`
 
 ---
@@ -651,17 +677,17 @@ type CommonPlace = {
   "addedAt": "...",
   "note": "꼭 가고 싶어요",
   "scheduled": false,
-  "place": { /* CommonPlace */ }
+  "place": {/* CommonPlace */}
 }
 ```
 
-- 별도 candidate `_id` 없음 (room embed)  
-- POST `{ placeId, note? }` **또는** `{ tourContentId, contentTypeId?, note? }` — 동일 user+place 중복 시 no-op 후 목록 반환  
+- 별도 candidate `_id` 없음 (room embed)
+- POST `{ placeId, note? }` **또는** `{ tourContentId, contentTypeId?, note? }` — 동일 user+place 중복 시 no-op 후 목록 반환
 - DELETE 본인 `addedBy`만 제거. 타인 후보는 매칭 안 되어 **조용히 무시** (`{ success: true }` — 403 아님)
 
 ### `scheduled` 일관성
 
-- DB 필드이지만, 일정 add/delete/PUT 시 **schedule의 placeId로부터 재동기화**함  
+- DB 필드이지만, 일정 add/delete/PUT 시 **schedule의 placeId로부터 재동기화**함
 - 일정에 넣으면 `true`, 일정에서 빠지면 `false`
 
 ---
@@ -686,42 +712,43 @@ type CommonPlace = {
 }
 ```
 
-| 프론트 필드 | 백엔드 |
-|-------------|--------|
-| `date` YYYY-MM-DD | **`day` number** (1, 2, …) |
-| `durationMinutes` | `startTime`/`endTime`으로 표현 |
+| 프론트 필드          | 백엔드                                          |
+| -------------------- | ----------------------------------------------- |
+| `date` YYYY-MM-DD    | **`day` number** (1, 2, …)                      |
+| `durationMinutes`    | `startTime`/`endTime`으로 표현                  |
 | `itemType` meal/rest | **없음** — `placeName`만 필수, placeId optional |
-| `note` | `reason` |
-| `priority` | `must` \| `optional` \| `skip` |
+| `note`               | `reason`                                        |
+| `priority`           | `must` \| `optional` \| `skip`                  |
 
-- `startTime` / `endTime` **둘 다 필수** (HH:mm 문자열)  
-- `24:00` / 자정 넘김: **검증 없음** (클라이언트가 알아서)  
+- `startTime` / `endTime` **둘 다 필수** (HH:mm 문자열)
+- `24:00` / 자정 넘김: **검증 없음** (클라이언트가 알아서)
 - Place 객체: schedule 응답에 **미포함**
 
 ### API 매핑 (프론트 동작)
 
-| 동작 | API |
-|------|-----|
-| 같은 날 순서 변경 | `PATCH .../schedule/reorder` `{ day, itemIds, expectedVersion }` |
-| 다른 날로 이동 | `PATCH .../schedule/items/:itemId` `{ day\|date, expectedVersion, unlock? }` |
-| 시작/종료 시간 변경 | `PATCH .../schedule/items/:itemId` `{ startTime, endTime, expectedVersion }` |
-| 항목 추가 | `POST .../schedule/items` `{ ..., expectedVersion }` |
-| 전체 교체 | `PUT .../schedule` `{ days, expectedVersion }` **필수** |
-| 잠금 | `PATCH .../schedule/items/:itemId/lock` `{ locked, expectedVersion }` |
-| 확정 예약 | `PUT .../schedule/items/:itemId/reservation` |
-| 입장권 업로드 | `POST .../tickets` multipart `image` + `expectedVersion` |
-| 계획 설정 | `GET/PATCH .../planning` (숙소·복귀·timezone·이동수단·버퍼) |
-| 여행 날짜 원자 변경 | `PATCH .../trip-dates` `{ startDate, endDate, expectedVersion, itemActions? }` |
-| 제안 적용 | `POST .../schedule/apply` `{ days, expectedVersion, expectedFactsVersion? }` |
-| 분석 기준 | `GET .../analysis-baseline` |
-| 성향 공유 | `GET .../preferences` (파생값만, null≠0) |
-| 이동제약 새로고침 | `POST .../preferences/refresh-constraints` |
-| 후보 선호 신호 | `PUT .../candidates/:placeId/signals` |
-| 공유 TODO | `GET/POST .../todos`, `PATCH/DELETE .../todos/:todoId`, `POST .../todos/resolve-auto` |
-| 공유 문서 | `GET/POST .../documents`, `DELETE .../documents/:documentId` |
-| 서명 다운로드 | `POST .../files/signed-url` → `GET /files/download?token=` |
+| 동작                | API                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| 같은 날 순서 변경   | `PATCH .../schedule/reorder` `{ day, itemIds, expectedVersion }`                      |
+| 다른 날로 이동      | `PATCH .../schedule/items/:itemId` `{ day\|date, expectedVersion, unlock? }`          |
+| 시작/종료 시간 변경 | `PATCH .../schedule/items/:itemId` `{ startTime, endTime, expectedVersion }`          |
+| 항목 추가           | `POST .../schedule/items` `{ ..., expectedVersion }`                                  |
+| 전체 교체           | `PUT .../schedule` `{ days, expectedVersion }` **필수**                               |
+| 잠금                | `PATCH .../schedule/items/:itemId/lock` `{ locked, expectedVersion }`                 |
+| 확정 예약           | `PUT .../schedule/items/:itemId/reservation`                                          |
+| 입장권 업로드       | `POST .../tickets` multipart `image` + `expectedVersion`                              |
+| 계획 설정           | `GET/PATCH .../planning` (숙소·복귀·timezone·이동수단·버퍼)                           |
+| 여행 날짜 원자 변경 | `PATCH .../trip-dates` `{ startDate, endDate, expectedVersion, itemActions? }`        |
+| 제안 적용           | `POST .../schedule/apply` `{ days, expectedVersion, expectedFactsVersion? }`          |
+| 분석 기준           | `GET .../analysis-baseline`                                                           |
+| 성향 공유           | `GET .../preferences` (파생값만, null≠0)                                              |
+| 이동제약 새로고침   | `POST .../preferences/refresh-constraints`                                            |
+| 후보 선호 신호      | `PUT .../candidates/:placeId/signals`                                                 |
+| 공유 TODO           | `GET/POST .../todos`, `PATCH/DELETE .../todos/:todoId`, `POST .../todos/resolve-auto` |
+| 공유 문서           | `GET/POST .../documents`, `DELETE .../documents/:documentId`                          |
+| 서명 다운로드       | `POST .../files/signed-url` → `GET /files/download?token=`                            |
 
 ### 역할
+
 - **방장만:** 방 수정·여행지·여행 날짜·planning·초대코드 재발급
 - **멤버:** 일정/후보/TODO/문서/티켓 (TODO 수정·삭제는 작성자·담당자·방장)
 
@@ -757,11 +784,11 @@ clientMutationId: ...    # optional
 
 ### PUT `/rooms/:id/schedule` (batch)
 
-- **전체 replace** + **expectedVersion 필수** + 조건부 쓰기  
-- Validation 실패·버전 충돌 시 저장 안 함 (파일 부수효과 없음)  
-- `id` 없으면 서버가 생성  
-- 요청에 없는 item = 삭제 (잠긴 item 삭제는 거부)  
-- 같은 item id + 같은 placeId면 tickets/reservation 유지; placeId 변경 시 티켓 비승계  
+- **전체 replace** + **expectedVersion 필수** + 조건부 쓰기
+- Validation 실패·버전 충돌 시 저장 안 함 (파일 부수효과 없음)
+- `id` 없으면 서버가 생성
+- 요청에 없는 item = 삭제 (잠긴 item 삭제는 거부)
+- 같은 item id + 같은 placeId면 tickets/reservation 유지; placeId 변경 시 티켓 비승계
 
 ### reorder
 
@@ -783,7 +810,7 @@ clientMutationId: ...    # optional
 ```json
 {
   "origin": { "lat": 37.5665, "lng": 126.978 },
-  "destination": { "lat": 37.5700, "lng": 126.982 },
+  "destination": { "lat": 37.57, "lng": 126.982 },
   "waypoints": [],
   "priority": "RECOMMEND",
   "summaryOnly": true
@@ -801,23 +828,12 @@ clientMutationId: ...    # optional
 }
 ```
 
-| 포함 | 미포함 |
-|------|--------|
-| 자동차 경로 거리·시간 (Kakao Mobility) | 대중교통 / **막차시간** (실데이터) |
-| 선택적 path 좌표 (`summaryOnly: false`) | 예약 조회 (외부 OTA) |
+| 포함                                    | 미포함                             |
+| --------------------------------------- | ---------------------------------- |
+| 자동차 경로 거리·시간 (Kakao Mobility)  | 대중교통 / **막차시간** (실데이터) |
+| 선택적 path 좌표 (`summaryOnly: false`) | 예약 조회 (외부 OTA)               |
 
-### POST `/mobility/transit` (stub)
-
-```json
-{ "available": false, "reason": "TRANSIT_PROVIDER_NOT_CONFIGURED", "legs": [], "lastDepartureAt": null }
-```
-
-프로바이더/키 정해지면 채움. 지금은 FE가 `available:false`로 분기하면 됨.
-
-### Notifications (stub)
-
-- `GET /notifications` → `{ available: false, items: [], unreadCount: 0 }`
-- `POST /notifications/ack` → 저장 없음
+대중교통·막차와 알림 API는 출시 계약에 포함하지 않습니다. Frontend는 해당 근거가 필요한 분석을 표시하지 않으며 자동차 이동시간만 `/mobility/directions`로 계산합니다.
 
 입장권 사진은 Mobility가 아니라 **일정 항목 tickets API**로 관리합니다 (`POST/GET/DELETE .../schedule/items/:itemId/tickets`).
 
@@ -851,7 +867,7 @@ GET      /files/download?token=...         # Public (토큰만)
 ```
 
 - 티켓/문서 응답에 `download: { url, expiresAt, ... }` 포함
-- `UPLOADS_PUBLIC=false`면 정적 `/uploads` 끄고 서명 URL만 사용
+- 운영은 `UPLOADS_PUBLIC=false`만 허용하며 정적 `/uploads` 대신 서명 URL 사용
 - Tour 상세 `operatingHours`: `{ status, hoursText, restDateText, weekdayRanges, raw, fetchedAt }`
 
 ### PATCH `/rooms/:id/trip-dates`
@@ -874,7 +890,7 @@ GET      /files/download?token=...         # Public (토큰만)
 
 ### POST `/rooms/:id/schedule/apply`
 
-batch `PUT /schedule`와 동일 잠금·예약 규칙 + optional `expectedFactsVersion` (불일치 시 `FACTS_VERSION_CONFLICT`).
+batch `PUT /schedule`와 동일 잠금·예약 규칙 + 필수 `expectedFactsVersion` (불일치 시 `FACTS_VERSION_CONFLICT`).
 
 ### GET `/rooms/:id/preferences`
 
@@ -887,42 +903,38 @@ batch `PUT /schedule`와 동일 잠금·예약 규칙 + optional `expectedFactsV
 
 ## 12. Compatibility (궁합)
 
-- `GET .../compatibility` ≡ `GET .../match-result`  
-- 멤버 `travelTypeSnapshot.tags` 교집합 점수  
-- **실질 2인 로직** (`calculateMatchResult`가 앞 2명만 사용)  
-- 2명 미만: score 0 + “동행자 정보가 부족합니다.”  
-- 3명+: 앞 2명만 — **그룹 진단은 프론트 로컬 유지 권장**  
-- `adjustment-plan` / `courses`: **static template / rule stub**
+- `GET .../compatibility` ≡ `GET .../match-result`
+- 멤버 `travelTypeSnapshot.tags` 교집합 점수
+- **실질 2인 로직** (`calculateMatchResult`가 앞 2명만 사용)
+- 2명 미만: score 0 + “동행자 정보가 부족합니다.”
+- 3명+: 앞 2명만 — **그룹 진단은 프론트 로컬 유지 권장**
+- 일정 조율·코스 생성은 서버의 정적 응답을 사용하지 않고 Frontend 두리 엔진이 현재 서버 snapshot으로 계산합니다.
 
 ---
 
-## 13. Duri (대부분 stub · 분석 리포트 경로만 Mobility 연동)
+## 13. Duri
 
-| Endpoint | 구현 수준 | 자동 적용 가능? |
-|----------|-----------|-----------------|
-| suggest-places | stub 문구 | ❌ |
-| suggest-order | heuristic (reverse itemIds) | 수동 적용 |
-| fill-gaps | stub | ❌ |
-| replace-place | stub | ❌ |
-| reflect-preferences | compatibility 재사용 | ❌ |
-| optimize | stub message | ❌ |
-| generate-draft | stub days | 클라이언트가 PUT schedule |
-| analysis-report | Mobility로 segment 거리·시간 채움 (좌표 없으면 unknown) | 참고용 |
-| analysis-report/latest | DB 조회 | 참고용 |
+| Endpoint               | 구현 수준                                                     | 용도                    |
+| ---------------------- | ------------------------------------------------------------- | ----------------------- |
+| reflect-preferences    | 현재 방의 파생 성향·후보 의견 조회                            | Frontend 조율 입력      |
+| analysis-report        | 자동차 실제 경로·시간 겹침·공유 성향 중 확인 가능한 근거 분석 | 서버 저장 리포트        |
+| analysis-report/latest | 최신 리포트와 stale 상태 조회                                 | 재조회                  |
+| schedule/apply         | `expectedVersion`·`expectedFactsVersion`·보호 일정 원자 검증  | Frontend 두리 초안 적용 |
 
-응답에 before/after schedule diff 구조 **없음**. 자동 적용은 연결하지 말고 참고용으로 쓰는 것이 맞음.
+일정 초안과 조율은 Frontend의 수학적 엔진이 서버 일정·후보·성향·예약 snapshot을 입력으로 계산합니다. 적용 시에는 `POST /rooms/:id/schedule/apply`가 잠금·예약·티켓 및 두 버전을 다시 검사합니다.
 
 ---
 
 ## 14. Invite
 
-| API | 비고 |
-|-----|------|
+| API                          | 비고                                          |
+| ---------------------------- | --------------------------------------------- |
+| GET `/invites/:code`         | **비인증** HTTPS 앱 연결 안내 페이지          |
 | GET `/invites/:code/preview` | **비인증** 미리보기 (여행지·기간·멤버수·방장) |
-| GET `/rooms/:id/invite-link` | `{ inviteCode, inviteLink }` |
-| POST `/rooms/:id/invites` | owner만, 코드 **즉시 교체** (만료 필드 없음) |
-| POST `/invites/:code/accept` | 기존 유저 + Bearer |
-| POST `/auth/join-by-invite` | guest 생성 + tokens + roomId |
+| GET `/rooms/:id/invite-link` | `{ inviteCode, inviteLink }`                  |
+| POST `/rooms/:id/invites`    | owner만, 코드 **즉시 교체** (만료 필드 없음)  |
+| POST `/invites/:code/accept` | 기존 유저 + Bearer                            |
+| POST `/auth/join-by-invite`  | guest 생성 + tokens + roomId                  |
 
 ### GET `/invites/:code/preview` (비인증)
 
@@ -947,8 +959,9 @@ batch `PUT /schedule`와 동일 잠금·예약 규칙 + optional `expectedFactsV
 }
 ```
 
-기본 링크: `tripmatch://invite/{code}`  
-웹 URL은 `INVITE_LINK_BASE`를 `https://app.example.com/invite`처럼 바꾸거나, 프론트에서 code만 파싱.
+공유 링크는 운영 `APP_BASE_URL`을 기준으로 `https://<host>/api/v1/invites/{code}`를 사용합니다. 로컬 HTTP 개발에서만 `tripmatch://invite/{code}`를 유지합니다. 앱은 두 형식을 모두 `/invite/{code}` 화면으로 해석합니다.
+
+운영 도메인이 앱을 직접 열려면 서버의 `/.well-known/assetlinks.json` 및 `/.well-known/apple-app-site-association`과 앱 빌드의 Android intent filter/iOS associated domain이 함께 설정되어야 합니다.
 
 ---
 
@@ -973,13 +986,13 @@ batch `PUT /schedule`와 동일 잠금·예약 규칙 + optional `expectedFactsV
 }
 ```
 
-| 필드 | 설명 |
-|------|------|
-| hasLicense / hasCar | 면허·자차 |
+| 필드                | 설명                                                          |
+| ------------------- | ------------------------------------------------------------- |
+| hasLicense / hasCar | 면허·자차                                                     |
 | mobilityConstraints | `STAIRS` \| `STEEP_SLOPE` \| `LONG_WALK` 만 (민감정보 최소화) |
-| birthYear / age | 체력 보정용 |
-| tags | 관심 태그 |
-| answers | 기타 자유 형식 (optional) |
+| birthYear / age     | 체력 보정용                                                   |
+| tags                | 관심 태그                                                     |
+| answers             | 기타 자유 형식 (optional)                                     |
 
 User에도 `hasLicense`, `hasCar`, `mobilityConstraints`, `birthYear`, `interestTags` 캐시. 제출 시 `onboardingCompleted: true`.
 
@@ -987,15 +1000,15 @@ User에도 `hasLicense`, `hasCar`, `mobilityConstraints`, `birthYear`, `interest
 
 ## 16. 프론트 연동 우선순위 체크리스트
 
-1. ✅ Auth 토큰 계약 (body refresh, Bearer access)  
-2. ✅ Users / Quiz DTO (세션 플로우)  
-3. ✅ CreateRoomDto + Room 응답  
-4. ✅ Schedule item / reorder / PUT batch  
-5. ✅ Places search + source 한계  
-6. ⚠️ Destinations 목록 API 없음 → 고정 name 목록 또는 destination PATCH  
-7. ⚠️ Places batch 없음  
-8. ⚠️ Duri는 stub — 자동 적용 비권장  
-9. ⚠️ KTO OpenAPI 미연동  
-10. ✅ 성향 테스트: 일정표 feature + 4축 유형 + preference 분리  
+1. ✅ Auth 토큰 계약 (body refresh, Bearer access)
+2. ✅ Users / Quiz DTO (세션 플로우)
+3. ✅ CreateRoomDto + Room 응답
+4. ✅ Schedule item / reorder / PUT batch
+5. ✅ Places search + source 한계
+6. ⚠️ Destinations 목록 API 없음 → 고정 name 목록 또는 destination PATCH
+7. ⚠️ Places batch 없음
+8. ✅ Duri 초안은 Frontend 계산 후 `/schedule/apply`로 원자 적용
+9. ✅ TourAPI 장소 검색·상세·운영 근거 연동
+10. ✅ 성향 테스트: 일정표 feature + 4축 유형 + preference 분리
 
 질문/추가 구현이 필요하면 Backend 쪽에서 `POST /places/batch`, `GET /destinations`, 오류 `code` 필드 등을 이어서 맞출 수 있습니다.

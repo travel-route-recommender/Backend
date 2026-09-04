@@ -4,6 +4,24 @@ import { HydratedDocument } from 'mongoose';
 export type UserDocument = HydratedDocument<User>;
 
 @Schema({ _id: false })
+export class RefreshReceipt {
+  @Prop({ required: true })
+  operationId: string;
+
+  @Prop({ required: true })
+  requestTokenHash: string;
+
+  @Prop({ required: true })
+  accessToken: string;
+
+  @Prop({ required: true })
+  refreshToken: string;
+
+  @Prop({ required: true })
+  expiresAt: Date;
+}
+
+@Schema({ _id: false })
 export class TravelType {
   @Prop({ required: true })
   name: string;
@@ -23,7 +41,7 @@ export class TravelType {
 
 @Schema({ timestamps: true, collection: 'users' })
 export class User {
-  @Prop({ sparse: true, lowercase: true, trim: true })
+  @Prop({ lowercase: true, trim: true })
   email?: string;
 
   @Prop()
@@ -80,8 +98,25 @@ export class User {
 
   @Prop({ type: [String], default: [] })
   refreshTokens: string[];
+
+  /**
+   * A short, bounded replay receipt for a single refresh operation. This lets
+   * a client recover the exact response after a lost connection without
+   * leaving the consumed refresh token generally reusable.
+   */
+  @Prop({ type: [RefreshReceipt], default: [] })
+  refreshReceipts: RefreshReceipt[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ email: 1 }, { unique: true, sparse: true });
-UserSchema.index({ oauthProvider: 1, oauthId: 1 }, { sparse: true });
+UserSchema.index(
+  { oauthProvider: 1, oauthId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      oauthProvider: { $type: 'string' },
+      oauthId: { $type: 'string' },
+    },
+  },
+);

@@ -45,7 +45,7 @@ export function placeClientId(
 type MongoPlaceLike = {
   _id: { toString(): string } | string;
   externalId?: string;
-  source?: PlaceSource | string;
+  source?: string;
   name: string;
   address?: string;
   lat?: number;
@@ -71,9 +71,11 @@ const CONTENT_TYPE_LABELS: Record<number, string> = {
 };
 
 export function fromMongoPlace(doc: MongoPlaceLike): CommonPlace {
-  const placeId =
-    typeof doc._id === 'string' ? doc._id : doc._id.toString();
-  const source = (doc.source as PlaceSource) || 'manual';
+  const placeId = typeof doc._id === 'string' ? doc._id : doc._id.toString();
+  const source: PlaceSource =
+    doc.source === 'tour' || doc.source === 'kakao' || doc.source === 'manual'
+      ? doc.source
+      : 'manual';
   const externalId = doc.externalId || placeId;
   const images = doc.images ?? [];
   const contentTypeId =

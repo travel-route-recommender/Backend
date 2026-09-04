@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -11,7 +12,6 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -129,14 +129,14 @@ export class RoomTodosController {
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
     @Param('todoId') todoId: string,
-    @Query('expectedRevision') expectedRevision: string,
+    @Query('expectedRevision', ParseIntPipe) expectedRevision: number,
     @Query('clientMutationId') clientMutationId?: string,
   ) {
     return this.todosService.remove(
       roomId,
       user.userId,
       todoId,
-      parseInt(expectedRevision, 10),
+      expectedRevision,
       clientMutationId,
     );
   }

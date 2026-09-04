@@ -1,10 +1,7 @@
 /**
  * Schedule mutation helpers: version conflict, lock checks, place-change ticket clear.
  */
-import {
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import {
   ConfirmedReservation,
@@ -15,7 +12,10 @@ import {
   VersionedValue,
 } from '../schemas/travel-room.schema';
 
-export function scheduleConflict(currentVersion: number, expectedVersion?: number) {
+export function scheduleConflict(
+  currentVersion: number,
+  expectedVersion?: number,
+) {
   return new ConflictException({
     code: 'SCHEDULE_VERSION_CONFLICT',
     message:
@@ -65,6 +65,71 @@ export function ticketsForPlaceChange(
     tickets: [],
     filesToDelete: old.map((t) => t.imageUrl),
   };
+}
+
+type ProposedScheduleDay = {
+  day: number;
+  items: Array<{
+    id?: string;
+    day?: number;
+    date?: string;
+    placeId?: string;
+    placeName: string;
+    startTime: string;
+    endTime: string;
+    locked?: boolean;
+  }>;
+};
+
+/**
+ * 서버 제안 적용 시 사용자가 잠갔거나 증빙이 연결된 일정을 보호한다.
+ * 수동 batch 편집과 달리 apply는 unlock 우회도 허용하지 않는다.
+ */
+export function findProtectedProposalConflicts(
+  currentDays: Array<{ day: number; items: ItineraryItem[] }>,
+  proposedDays: ProposedScheduleDay[],
+): Array<{ itemId: string; reason: 'locked' | 'reservation' | 'ticket' }> {
+  const proposed = new Map<
+    string,
+    { day: number; item: ProposedScheduleDay['items'][number] }
+  >();
+  for (const day of proposedDays) {
+    for (const item of day.items) {
+      if (item.id) proposed.set(item.id, { day: item.day ?? day.day, item });
+    }
+  }
+
+  const conflicts: Array<{
+    itemId: string;
+    reason: 'locked' | 'reservation' | 'ticket';
+  }> = [];
+  for (const day of currentDays) {
+    for (const item of day.items) {
+      const reason = item.locked
+        ? 'locked'
+        : item.reservation?.status === 'confirmed'
+          ? 'reservation'
+          : (item.tickets?.length ?? 0) > 0
+            ? 'ticket'
+            : null;
+      if (!reason) continue;
+
+      const next = proposed.get(item.id);
+      const unchanged =
+        !!next &&
+        next.day === item.day &&
+        next.item.startTime === item.startTime &&
+        next.item.endTime === item.endTime &&
+        (next.item.placeId ?? null) === (item.placeId?.toString() ?? null) &&
+        next.item.placeName === item.placeName &&
+        (next.item.date == null || next.item.date === item.date) &&
+        // apply는 사용자가 건 잠금을 풀 권한이 없다. 필드 생략은
+        // saveSchedule이 기존 잠금을 보존하므로 허용한다.
+        (!item.locked || next.item.locked !== false);
+      if (!unchanged) conflicts.push({ itemId: item.id, reason });
+    }
+  }
+  return conflicts;
 }
 
 export function toVersionedDto(v?: VersionedValue) {

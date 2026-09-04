@@ -1,19 +1,13 @@
 /** 도전 유형 (FE 산출) */
 export type ChallengeStyleType =
-  | 'challenge_executor'
-  | 'cautious_explorer'
-  | 'stable_planner';
+  'challenge_executor' | 'cautious_explorer' | 'stable_planner';
 
 export type ScheduleStyleType = 'packed' | 'relaxed';
 
 export type ItinerarySentiment = 'like' | 'neutral' | 'dislike';
 
 export type BudgetRankItem =
-  | 'stay'
-  | 'food'
-  | 'activity'
-  | 'shopping'
-  | 'mobility';
+  'stay' | 'food' | 'activity' | 'shopping' | 'mobility';
 
 export type StaminaAnswer = 'low' | 'medium' | 'high';
 export type StaminaLevel = 'LOW' | 'NORMAL' | 'HIGH';
@@ -144,7 +138,7 @@ export type QuizPreferences = {
 
 export type MobilityConstraint = 'STAIRS' | 'STEEP_SLOPE' | 'LONG_WALK';
 
-/** @deprecated 구 예산 코인 카테고리 (tags API mock 유지용) */
+/** 예산 우선순위 분류 */
 export type SpendingCategory =
   | 'ACCOMMODATION'
   | 'FOOD'

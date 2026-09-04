@@ -71,7 +71,9 @@ export class MobilityService {
     };
 
     if (dto.waypoints?.length) {
-      params.waypoints = dto.waypoints.map((w) => this.toNaviPoint(w)).join('|');
+      params.waypoints = dto.waypoints
+        .map((w) => this.toNaviPoint(w))
+        .join('|');
     }
 
     try {

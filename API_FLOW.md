@@ -107,7 +107,7 @@ sequenceDiagram
 
 ---
 
-## 3. 메인 MVP 사용자 여정 (Happy Path)
+## 3. 메인 사용자 여정 (Happy Path)
 
 앱의 핵심 플로우를 API 호출 순서로 표현한 다이어그램입니다.
 
@@ -139,8 +139,7 @@ flowchart TD
         INVITE --> ACCEPT["POST /invites/:code/accept<br/>(기존 유저)"]
         INVITE --> GUEST["POST /auth/join-by-invite<br/>(guest 입장)"]
         ACCEPT & GUEST --> COMPAT["GET /rooms/:id/compatibility<br/>GET /rooms/:id/match-result"]
-        COMPAT --> ADJ["GET /rooms/:id/adjustment-plan (MVP)<br/>GET /rooms/:id/courses (MVP)"]
-        ADJ --> STYLE["PATCH /rooms/:id/schedule-style<br/>PATCH /rooms/:id/courses/selected"]
+        COMPAT --> STYLE["PATCH /rooms/:id/schedule-style"]
     end
 
     subgraph Phase5["⑤ 후보 & 일정"]
@@ -149,9 +148,10 @@ flowchart TD
         SCHED --> WS["GET /rooms/:id/workspace<br/>(room + candidates + schedule 한번에)"]
     end
 
-    subgraph Phase6["⑥ 두리 AI (MVP stub)"]
-        WS --> DURI["POST /rooms/:id/duri/*<br/>suggest-places, optimize, generate-draft..."]
-        DURI --> REPORT["POST /duri/analysis-report<br/>GET /duri/analysis-report/latest"]
+    subgraph Phase6["⑥ 두리 일정 점검·조율"]
+        WS --> DURI["Frontend 두리 엔진<br/>현재 서버 snapshot 분석·초안"]
+        DURI --> APPLY["POST /rooms/:id/schedule/apply<br/>일정·사실 버전 및 보호 일정 검증"]
+        APPLY --> REPORT["POST /duri/analysis-report<br/>GET /duri/analysis-report/latest"]
     end
 
     REPORT --> DONE([여행 완료<br/>PATCH /rooms/:id status=completed])
@@ -174,7 +174,9 @@ GET /rooms/:id/compatibility (궁합)
     ↓
 POST /rooms/:id/schedule/items (일정 작성)
     ↓
-POST /rooms/:id/duri/* (두리 제안 — MVP stub)
+Frontend 두리 엔진으로 현재 서버 snapshot 분석·초안 생성
+    ↓
+POST /rooms/:id/schedule/apply (버전·잠금·예약·티켓 원자 검증)
 ```
 
 ---
@@ -183,7 +185,7 @@ POST /rooms/:id/duri/* (두리 제안 — MVP stub)
 
 ```mermaid
 flowchart LR
-    OWNER["방장<br/>GET /rooms/:id/invite-link"] --> LINK["tripmatch://invite/:code"]
+    OWNER["방장<br/>GET /rooms/:id/invite-link"] --> LINK["HTTPS /api/v1/invites/:code<br/>(로컬은 tripmatch://invite/:code)"]
 
     LINK --> BRANCH{유저 상태?}
 
@@ -214,8 +216,7 @@ flowchart TB
 
     ROOM --> MATCH["궁합 / 매칭"]
     MATCH --> MT1["GET /compatibility<br/>GET /match-result"]
-    MATCH --> MT2["GET /adjustment-plan (MVP)<br/>GET /courses (MVP)"]
-    MATCH --> MT3["PATCH /schedule-style<br/>PATCH /courses/selected"]
+    MATCH --> MT2["PATCH /schedule-style"]
 
     ROOM --> CAND["후보 장소"]
     CAND --> C1["GET /candidates<br/>GET /by-member<br/>GET /common<br/>GET /explore"]
@@ -225,9 +226,9 @@ flowchart TB
     SCHED --> S1["GET /schedule<br/>GET /schedule/map<br/>GET /schedule/summary"]
     SCHED --> S2["POST /schedule/items<br/>PATCH reorder<br/>PUT batch"]
 
-    ROOM --> DURI["두리 AI"]
-    DURI --> D1["POST /duri/suggest-*<br/>POST /duri/optimize<br/>POST /duri/generate-draft"]
-    DURI --> D2["POST /duri/analysis-report<br/>GET /duri/analysis-report/latest"]
+    ROOM --> DURI["두리 일정 점검·조율"]
+    DURI --> D1["Frontend 두리 엔진<br/>서버 snapshot 분석·초안"]
+    DURI --> D2["POST /duri/analysis-report<br/>GET /duri/analysis-report/latest<br/>POST /schedule/apply"]
 
     ROOM --> WS["GET /workspace<br/>(통합 뷰)"]
 ```
@@ -276,7 +277,7 @@ sequenceDiagram
 | 협업 | Invites | `/invites` | accept | travel_rooms |
 | 매칭 | Rooms (sub) | `/rooms/:id` | compatibility, courses, schedule-style | travel_rooms |
 | 일정 | Rooms (sub) | `/rooms/:id` | candidates, schedule items | travel_rooms |
-| AI | Duri | `/rooms/:id/duri` | suggest-*, analysis-report | travel_rooms, analysis_reports |
+| 일정 분석 | Duri | `/rooms/:id/duri` | 공유 성향, analysis-report | travel_rooms, analysis_reports |
 
 ---
 
@@ -285,24 +286,15 @@ sequenceDiagram
 | 상태 | 의미 |
 |------|------|
 | **완료** | 실로직 구현됨 |
-| **MVP** | API는 있으나 stub / heuristic (프론트 연동용) |
 | **시작 전** | 미구현 (Phase 2/3) |
-
-### MVP (stub/heuristic)
-
-- `GET /rooms/:id/adjustment-plan`
-- `GET /rooms/:id/courses`
-- `POST /rooms/:id/duri/*` 대부분
 
 ### Phase 2 / 3 백로그
 
 | 항목 | Phase |
 |------|-------|
 | Google / Apple OAuth | 2 |
-| guest → 정식 계정 merge | 2 |
-| Kakao Directions + 캐싱 | 2 |
-| N명 그룹 궁합 알고리즘 | 2 |
-| priority must/optional/skip 일정 로직 | 2 |
+| 대중교통·막차 제공자 연동 | 2 |
+| 게스트 → 정식 계정 데이터 이전 | 2 |
 | LLM 기반 두리 | 3 |
 | WebSocket 실시간 협업 | 3 |
 

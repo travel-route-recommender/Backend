@@ -55,10 +55,7 @@ export class RoomDocumentsController {
   @Get('documents')
   @ApiOperation({ summary: '공유 문서 목록 (서명 다운로드 URL 포함)' })
   @ApiParam(ROOM_ID)
-  list(
-    @CurrentUser() user: AuthUser,
-    @Param('roomId') roomId: string,
-  ) {
+  list(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
     return this.docsService.list(roomId, user.userId);
   }
 

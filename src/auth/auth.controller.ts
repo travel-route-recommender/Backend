@@ -11,6 +11,7 @@ import {
   JoinByInviteDto,
   KakaoOAuthDto,
   LoginDto,
+  RefreshTokenBodyDto,
   RefreshTokenDto,
   SignupDto,
 } from './dto/auth.dto';
@@ -24,6 +25,7 @@ import {
   AuthTokensDto,
   SuccessDto,
 } from '../common/dto/swagger-responses.dto';
+import { RateLimit } from '../common/guards/rate-limit.guard';
 
 @ApiTags('인증')
 @Controller('auth')
@@ -31,6 +33,12 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('signup')
+  @RateLimit({
+    group: 'auth-signup',
+    limit: 5,
+    windowMs: 60_000,
+    identityField: 'email',
+  })
   @ApiOperation({
     summary: '이메일 회원가입',
     description:
@@ -42,6 +50,12 @@ export class AuthController {
   }
 
   @Post('login')
+  @RateLimit({
+    group: 'auth-login',
+    limit: 10,
+    windowMs: 60_000,
+    identityField: 'email',
+  })
   @ApiOperation({
     summary: '이메일 로그인',
     description:
@@ -53,13 +67,19 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @RateLimit({
+    group: 'auth-refresh',
+    limit: 30,
+    windowMs: 60_000,
+    identityField: 'refreshToken',
+  })
   @ApiOperation({
     summary: '액세스 토큰 갱신',
     description: 'refreshToken으로 새 accessToken을 발급받습니다.',
   })
   @ApiOkResponse({ type: AuthTokensDto })
   refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+    return this.authService.refresh(dto.refreshToken, dto.operationId);
   }
 
   @ApiBearerAuth()
@@ -70,11 +90,17 @@ export class AuthController {
     description: '해당 refreshToken을 폐기합니다.',
   })
   @ApiOkResponse({ type: SuccessDto })
-  logout(@CurrentUser() user: AuthUser, @Body() dto: RefreshTokenDto) {
+  logout(@CurrentUser() user: AuthUser, @Body() dto: RefreshTokenBodyDto) {
     return this.authService.logout(user.userId, dto.refreshToken);
   }
 
   @Post('join-by-invite')
+  @RateLimit({
+    group: 'auth-invite',
+    limit: 10,
+    windowMs: 60_000,
+    identityField: 'inviteCode',
+  })
   @ApiOperation({
     summary: '초대코드로 게스트 입장',
     description:
@@ -86,6 +112,12 @@ export class AuthController {
   }
 
   @Post('oauth/kakao')
+  @RateLimit({
+    group: 'auth-kakao',
+    limit: 10,
+    windowMs: 60_000,
+    identityField: 'accessToken',
+  })
   @ApiOperation({
     summary: '카카오 로그인',
     description:

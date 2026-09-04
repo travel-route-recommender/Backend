@@ -3,7 +3,10 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type UserSaveDocument = HydratedDocument<UserSave>;
 
-@Schema({ timestamps: { createdAt: 'savedAt', updatedAt: false }, collection: 'user_saves' })
+@Schema({
+  timestamps: { createdAt: 'savedAt', updatedAt: false },
+  collection: 'user_saves',
+})
 export class UserSave {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;

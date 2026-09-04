@@ -1,7 +1,4 @@
-import {
-  CommonPlace,
-  placeClientId,
-} from '../common/place/common-place';
+import { CommonPlace, placeClientId } from '../common/place/common-place';
 
 export const TOUR_CONTENT_TYPE_IDS = [12, 14, 15, 25, 28, 32, 38, 39] as const;
 export type TourContentTypeId = (typeof TOUR_CONTENT_TYPE_IDS)[number];
@@ -344,7 +341,10 @@ export type OperatingHoursInfo = {
   }> | null;
 };
 
-const HOURS_FIELDS: Record<number, { hours: string[]; rest: string[]; lastEntry?: string[] }> = {
+const HOURS_FIELDS: Record<
+  number,
+  { hours: string[]; rest: string[]; lastEntry?: string[] }
+> = {
   12: { hours: ['usetime'], rest: ['restdate'] },
   14: { hours: ['usetimeculture'], rest: ['restdateculture'] },
   15: { hours: ['playtime', 'usetimefestival'], rest: [] },
@@ -361,9 +361,20 @@ function pickIntroField(
 ): string | null {
   for (const key of keys) {
     const v = intro[key];
-    if (v == null) continue;
-    const s = String(v).trim();
+    const s = scalarText(v)?.trim();
     if (s) return s;
+  }
+  return null;
+}
+
+function scalarText(value: unknown): string | null {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
   }
   return null;
 }
@@ -410,8 +421,8 @@ export function extractOperatingHours(
 
   const raw: Record<string, string | null> = {};
   for (const k of [...hoursKeys, ...restKeys]) {
-    const v = src[k];
-    raw[k] = v == null || String(v).trim() === '' ? null : String(v).trim();
+    const value = scalarText(src[k])?.trim();
+    raw[k] = value || null;
   }
 
   const weekdayRanges = parseSimpleWeekdayRanges(hoursText);
@@ -455,7 +466,9 @@ function parseSimpleWeekdayRanges(text: string | null) {
     const open = m[2].padStart(5, '0');
     const close = m[3].padStart(5, '0');
     const days: string[] = [];
-    const rangeMatch = dayPart.match(/([월화수목금토일])\s*[~\-–]\s*([월화수목금토일])/);
+    const rangeMatch = dayPart.match(
+      /([월화수목금토일])\s*[~\-–]\s*([월화수목금토일])/,
+    );
     if (rangeMatch) {
       const order = ['월', '화', '수', '목', '금', '토', '일'];
       const a = order.indexOf(rangeMatch[1]);
@@ -472,4 +485,3 @@ function parseSimpleWeekdayRanges(text: string | null) {
   }
   return ranges.length ? ranges : null;
 }
-

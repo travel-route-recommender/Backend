@@ -65,7 +65,12 @@ export class TodoSource {
 
 @Schema({ timestamps: true, collection: 'room_todos' })
 export class RoomTodo {
-  @Prop({ type: Types.ObjectId, ref: 'TravelRoom', required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'TravelRoom',
+    required: true,
+    index: true,
+  })
   roomId: Types.ObjectId;
 
   @Prop({ required: true, maxlength: 200 })
@@ -94,9 +99,6 @@ export class RoomTodo {
   @Prop({ default: 'Asia/Seoul' })
   timezone: string;
 
-  @Prop()
-  remindAt?: Date;
-
   @Prop({ type: Types.ObjectId, ref: 'User' })
   assigneeId?: Types.ObjectId;
 
@@ -106,7 +108,10 @@ export class RoomTodo {
   @Prop({ type: [TodoLink], default: [] })
   links: TodoLink[];
 
-  @Prop({ type: TodoSource, default: () => ({ kind: 'manual', userEdited: false }) })
+  @Prop({
+    type: TodoSource,
+    default: () => ({ kind: 'manual', userEdited: false }),
+  })
   source: TodoSource;
 
   @Prop({ default: false })
@@ -136,6 +141,16 @@ export const RoomTodoSchema = SchemaFactory.createForClass(RoomTodo);
 RoomTodoSchema.index({ roomId: 1, status: 1, archived: 1 });
 RoomTodoSchema.index({ roomId: 1, assigneeId: 1 });
 RoomTodoSchema.index(
+  { roomId: 1, lastMutationId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { lastMutationId: { $type: 'string' } },
+  },
+);
+RoomTodoSchema.index(
   { roomId: 1, 'source.dedupeKey': 1 },
-  { unique: true, partialFilterExpression: { 'source.dedupeKey': { $type: 'string' } } },
+  {
+    unique: true,
+    partialFilterExpression: { 'source.dedupeKey': { $type: 'string' } },
+  },
 );

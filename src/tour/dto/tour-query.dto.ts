@@ -113,7 +113,11 @@ export class NearbyPlacesQueryDto {
   @IsNumber()
   mapY: number;
 
-  @ApiPropertyOptional({ example: 2000, default: 2000, description: '반경(m), 최대 20000' })
+  @ApiPropertyOptional({
+    example: 2000,
+    default: 2000,
+    description: '반경(m), 최대 20000',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -160,7 +164,10 @@ export class FestivalQueryDto {
   @Matches(/^\d{8}$/, { message: 'eventStartDate must be YYYYMMDD' })
   eventStartDate?: string;
 
-  @ApiPropertyOptional({ example: '20261231', description: '행사 종료일 YYYYMMDD' })
+  @ApiPropertyOptional({
+    example: '20261231',
+    description: '행사 종료일 YYYYMMDD',
+  })
   @IsOptional()
   @Matches(/^\d{8}$/, { message: 'eventEndDate must be YYYYMMDD' })
   eventEndDate?: string;

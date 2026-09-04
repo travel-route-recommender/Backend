@@ -12,17 +12,23 @@ import { DestinationsModule } from './destinations/destinations.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { TourModule } from './tour/tour.module';
 import { MobilityModule } from './mobility/mobility.module';
-import { NotificationsModule } from './notifications/notifications.module';
+import { validateEnvironment } from './environment.validation';
+import { APP_GUARD } from '@nestjs/core';
+import { RateLimitGuard } from './common/guards/rate-limit.guard';
+import { AppLinksController } from './common/app-links.controller';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
     CacheModule,
     StorageModule,
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGODB_URI', 'mongodb://localhost:27017/tourmate'),
+        uri: config.get<string>(
+          'MONGODB_URI',
+          'mongodb://localhost:27017/tourmate',
+        ),
       }),
     }),
     AuthModule,
@@ -34,7 +40,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     DestinationsModule,
     TourModule,
     MobilityModule,
-    NotificationsModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: RateLimitGuard }],
+  controllers: [AppLinksController],
 })
 export class AppModule {}

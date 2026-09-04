@@ -149,7 +149,8 @@ export class TourController {
   @Get('places')
   @ApiOperation({
     summary: '지역별 관광지 목록',
-    description: 'areaCode / sigunguCode / contentTypeId. KorService2 `areaBasedList2`.',
+    description:
+      'areaCode / sigunguCode / contentTypeId. KorService2 `areaBasedList2`.',
   })
   @ApiOkResponse({ type: TourPlacePageDto })
   list(@Query() query: ListPlacesQueryDto) {
@@ -185,7 +186,11 @@ export class TourController {
       'destinations seed / 지역 핵심 추천에 사용.\n\n' +
       '특화 areaCd·signguCd 사용 (KorService2 코드와 다를 수 있음).',
   })
-  @ApiParam({ name: 'areaCd', example: '1', description: '지역 코드 (예: 1=서울)' })
+  @ApiParam({
+    name: 'areaCd',
+    example: '1',
+    description: '지역 코드 (예: 1=서울)',
+  })
   @ApiOkResponse({ type: TourHubPageDto })
   regionHighlights(
     @Param('areaCd') areaCd: string,

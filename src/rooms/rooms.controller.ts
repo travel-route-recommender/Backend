@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Put,
@@ -41,7 +42,6 @@ import {
   ReorderScheduleDto,
   ScheduleItemDto,
   ScheduleStyleDto,
-  SelectCourseDto,
   UpdateDestinationDto,
   UpdatePlanningDto,
   UpdateRoomDto,
@@ -52,9 +52,7 @@ import {
   UpsertReservationDto,
 } from './dto/room.dto';
 import {
-  AdjustmentPlanDto,
   CandidateDto,
-  CourseDto,
   InviteLinkDto,
   ItineraryItemDto,
   MatchResultDto,
@@ -149,7 +147,7 @@ export class RoomsController {
   }
 
   @Get(':roomId/progress')
-  @ApiOperation({ summary: '여행방 진행률 (5단계 heuristic)' })
+  @ApiOperation({ summary: '여행 준비 5단계 진행률' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: RoomProgressDto })
   getProgress(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
@@ -160,7 +158,10 @@ export class RoomsController {
   @ApiOperation({ summary: '초대 링크 조회' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: InviteLinkDto })
-  getInviteLink(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
+  getInviteLink(
+    @CurrentUser() user: AuthUser,
+    @Param('roomId') roomId: string,
+  ) {
     return this.roomsService.getInviteLink(roomId, user.userId);
   }
 
@@ -198,27 +199,11 @@ export class RoomsController {
   @ApiOperation({ summary: '궁합 결과 (compatibility와 동일)' })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: MatchResultDto })
-  getMatchResult(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
-    return this.roomsService.getMatchResult(roomId, user.userId);
-  }
-
-  @Get(':roomId/adjustment-plan')
-  @ApiOperation({ summary: '일정 조율 제안 (rule-based)' })
-  @ApiParam(ROOM_ID)
-  @ApiOkResponse({ type: AdjustmentPlanDto })
-  getAdjustmentPlan(
+  getMatchResult(
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
   ) {
-    return this.roomsService.getAdjustmentPlan(roomId, user.userId);
-  }
-
-  @Get(':roomId/courses')
-  @ApiOperation({ summary: '추천 코스 목록' })
-  @ApiParam(ROOM_ID)
-  @ApiOkResponse({ type: CourseDto, isArray: true })
-  getCourses(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
-    return this.roomsService.getCourses(roomId, user.userId);
+    return this.roomsService.getMatchResult(roomId, user.userId);
   }
 
   @Patch(':roomId/schedule-style')
@@ -230,17 +215,6 @@ export class RoomsController {
     @Body() dto: ScheduleStyleDto,
   ) {
     return this.roomsService.setScheduleStyle(roomId, user.userId, dto.style);
-  }
-
-  @Patch(':roomId/courses/selected')
-  @ApiOperation({ summary: '코스 선택 저장' })
-  @ApiParam(ROOM_ID)
-  selectCourse(
-    @CurrentUser() user: AuthUser,
-    @Param('roomId') roomId: string,
-    @Body() dto: SelectCourseDto,
-  ) {
-    return this.roomsService.selectCourse(roomId, user.userId, dto.courseId);
   }
 
   @Get(':roomId/candidates')
@@ -351,7 +325,8 @@ export class RoomsController {
   @Post(':roomId/schedule/items')
   @ApiOperation({
     summary: '일정 항목 추가',
-    description: 'body.expectedVersion 필수. 충돌 시 409 SCHEDULE_VERSION_CONFLICT',
+    description:
+      'body.expectedVersion 필수. 충돌 시 409 SCHEDULE_VERSION_CONFLICT',
   })
   @ApiParam(ROOM_ID)
   @ApiOkResponse({ type: ItineraryItemDto })
@@ -409,7 +384,7 @@ export class RoomsController {
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
     @Param('itemId') itemId: string,
-    @Query('expectedVersion') expectedVersion: string,
+    @Query('expectedVersion', ParseIntPipe) expectedVersion: number,
     @Query('unlock') unlock?: string,
     @Query('clientMutationId') clientMutationId?: string,
   ) {
@@ -417,7 +392,7 @@ export class RoomsController {
       roomId,
       user.userId,
       itemId,
-      parseInt(expectedVersion, 10),
+      expectedVersion,
       clientMutationId,
       unlock === 'true' || unlock === '1',
     );
@@ -471,14 +446,14 @@ export class RoomsController {
     @CurrentUser() user: AuthUser,
     @Param('roomId') roomId: string,
     @Param('itemId') itemId: string,
-    @Query('expectedVersion') expectedVersion: string,
+    @Query('expectedVersion', ParseIntPipe) expectedVersion: number,
     @Query('clientMutationId') clientMutationId?: string,
   ) {
     return this.roomsService.deleteReservation(
       roomId,
       user.userId,
       itemId,
-      parseInt(expectedVersion, 10),
+      expectedVersion,
       clientMutationId,
     );
   }
@@ -557,7 +532,7 @@ export class RoomsController {
     @Param('roomId') roomId: string,
     @Param('itemId') itemId: string,
     @Param('ticketId') ticketId: string,
-    @Query('expectedVersion') expectedVersion: string,
+    @Query('expectedVersion', ParseIntPipe) expectedVersion: number,
     @Query('clientMutationId') clientMutationId?: string,
   ) {
     return this.roomsService.deleteScheduleTicket(
@@ -565,7 +540,7 @@ export class RoomsController {
       user.userId,
       itemId,
       ticketId,
-      parseInt(expectedVersion, 10),
+      expectedVersion,
       clientMutationId,
     );
   }
@@ -588,11 +563,10 @@ export class RoomsController {
   @Get(':roomId/planning')
   @ApiOperation({ summary: '숙소·복귀·이동수단·여유시간·timezone 조회' })
   @ApiParam(ROOM_ID)
-  getPlanning(
-    @CurrentUser() user: AuthUser,
-    @Param('roomId') roomId: string,
-  ) {
-    return this.roomsService.getSchedule(roomId, user.userId).then((s) => s.planning);
+  getPlanning(@CurrentUser() user: AuthUser, @Param('roomId') roomId: string) {
+    return this.roomsService
+      .getSchedule(roomId, user.userId)
+      .then((s) => s.planning);
   }
 
   @Patch(':roomId/planning')
@@ -669,7 +643,8 @@ export class RoomsController {
   @Post(':roomId/preferences/refresh-constraints')
   @ApiOperation({
     summary: '내 이동제약 스냅샷 새로고침',
-    description: '유저 프로필 mobilityConstraints → 방 멤버 스냅샷 + factsVersion++',
+    description:
+      '유저 프로필 mobilityConstraints → 방 멤버 스냅샷 + factsVersion++',
   })
   @ApiParam(ROOM_ID)
   refreshConstraints(
@@ -682,7 +657,8 @@ export class RoomsController {
   @Put(':roomId/candidates/:placeId/signals')
   @ApiOperation({
     summary: '후보 장소 멤버 선호 신호 upsert',
-    description: 'mustVisit/avoid/preferenceStrength(1–5). 미전달 필드는 미응답 유지.',
+    description:
+      'mustVisit/avoid/preferenceStrength(1–5). 미전달 필드는 미응답 유지.',
   })
   @ApiParam(ROOM_ID)
   @ApiParam({ name: 'placeId' })
@@ -700,4 +676,3 @@ export class RoomsController {
     );
   }
 }
-

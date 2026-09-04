@@ -187,7 +187,7 @@ export class TourService {
       areaCode: commonItem.areacode || null,
       sigunguCode: commonItem.sigungucode || null,
       intro: introObj,
-      repeatingInfo: extractItems(info) as Record<string, unknown>[],
+      repeatingInfo: extractItems(info),
       operatingHours,
     };
 
@@ -222,10 +222,7 @@ export class TourService {
     const detail = await this.detail(contentId, contentTypeId);
 
     try {
-      const related = await this.relatedByKeyword(
-        detail,
-        size,
-      );
+      const related = await this.relatedByKeyword(detail, size);
       if (related.data.length > 0) {
         await this.cache.set(key, related, LIST_TTL);
         return related;
@@ -339,7 +336,10 @@ export class TourService {
   async regionHighlights(
     areaCd: string,
     query: RegionHighlightsQueryDto,
-  ): Promise<{ data: HubPlaceCard[]; meta: { total: number; baseYm: string } }> {
+  ): Promise<{
+    data: HubPlaceCard[];
+    meta: { total: number; baseYm: string };
+  }> {
     const baseYm = query.baseYm ?? latestBaseYm();
     const key = `tour:hub:${areaCd}:${query.signguCd}:${baseYm}:${query.size ?? 20}`;
     const cached = await this.cache.get<{
@@ -440,16 +440,12 @@ export class TourService {
       };
     }
 
-    const data = await this.client.callService(
-      'cnctr',
-      'tatsCnctrRatedList',
-      {
-        areaCd,
-        signguCd,
-        numOfRows: 100,
-        pageNo: 1,
-      },
-    );
+    const data = await this.client.callService('cnctr', 'tatsCnctrRatedList', {
+      areaCd,
+      signguCd,
+      numOfRows: 100,
+      pageNo: 1,
+    });
 
     const keyword = cleanPlaceKeyword(detail.name);
     const rows = extractItems(data).filter((r) => {
@@ -489,7 +485,7 @@ export class TourService {
   ): Promise<string> {
     const detail = await this.detail(contentId, contentTypeId);
     if (!detail.placeId) {
-      throw new NotFoundException('TourAPI place not found');
+      throw new NotFoundException('관광지 정보를 찾을 수 없습니다.');
     }
     return detail.placeId;
   }
@@ -656,7 +652,7 @@ export class TourService {
           restDate: detail.operatingHours.restDateText ?? undefined,
         },
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: 'after' },
     );
 
     return doc._id.toString();

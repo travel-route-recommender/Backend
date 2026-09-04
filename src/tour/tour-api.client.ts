@@ -1,19 +1,9 @@
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { clean } from './tour.util';
 
-export type TourServiceKind =
-  | 'kor'
-  | 'related'
-  | 'hub'
-  | 'datalab'
-  | 'cnctr';
+export type TourServiceKind = 'kor' | 'related' | 'hub' | 'datalab' | 'cnctr';
 
 /**
  * 한국관광공사 TourAPI 공통 클라이언트.
@@ -73,7 +63,7 @@ export class TourApiClient {
     const baseURL = this.baseUrl(kind);
     const label = `${kind}/${operation}`;
     try {
-      const res = await this.http.get(`/${operation}`, {
+      const res = await this.http.get<unknown>(`/${operation}`, {
         baseURL,
         params: {
           ...this.commonParams,
@@ -83,12 +73,10 @@ export class TourApiClient {
         },
       });
 
-      const data = res.data;
+      const data: unknown = res.data;
 
       if (typeof data === 'string') {
-        this.logger.error(
-          `TourAPI ${label} non-JSON: ${data.slice(0, 200)}`,
-        );
+        this.logger.error(`TourAPI ${label} non-JSON: ${data.slice(0, 200)}`);
         throw new HttpException(
           {
             code: 'TOUR_API_UNAVAILABLE',

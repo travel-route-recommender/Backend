@@ -29,7 +29,10 @@ export class PublicUserDto {
   @ApiProperty({ example: '윤지' })
   nickname: string;
 
-  @ApiPropertyOptional({ example: 'https://example.com/me.jpg', nullable: true })
+  @ApiPropertyOptional({
+    example: 'https://example.com/me.jpg',
+    nullable: true,
+  })
   profileImageUrl?: string | null;
 
   @ApiPropertyOptional({ type: TravelTypeDto, nullable: true })
@@ -162,7 +165,8 @@ export class CommonPlaceDto {
   @ApiProperty({
     example: '665abc123def456789012345',
     nullable: true,
-    description: 'Mongo places._id. Tour 목록(상세 전)은 null. 후보/저장에 사용',
+    description:
+      'Mongo places._id. Tour 목록(상세 전)은 null. 후보/저장에 사용',
   })
   placeId: string | null;
 
@@ -659,8 +663,11 @@ export class RoomScheduleDto {
 }
 
 export class MatchResultDto {
-  @ApiProperty({ example: 78 })
-  compatibilityScore: number;
+  @ApiProperty({ example: 78, nullable: true })
+  compatibilityScore: number | null;
+
+  @ApiProperty({ example: true })
+  available: boolean;
 
   @ApiProperty({ example: ['카페', '자연'] })
   matchingAreas: string[];
@@ -673,37 +680,6 @@ export class MatchResultDto {
 
   @ApiProperty({ example: '자연·카페에서 잘 맞아요' })
   summary: string;
-}
-
-export class CourseDto {
-  @ApiProperty({ example: 'course-1' })
-  id: string;
-
-  @ApiProperty({ example: '감성 제주 코스' })
-  title: string;
-
-  @ApiProperty({ example: '카페·일출 중심' })
-  subtitle: string;
-
-  @ApiProperty({ example: ['성산일출봉', '카페'] })
-  places: string[];
-
-  @ApiProperty({ example: ['감성', '자연'] })
-  tags: string[];
-
-  @ApiProperty({ example: 85 })
-  compatibilityScore: number;
-
-  @ApiProperty({ example: true })
-  isRecommended: boolean;
-}
-
-export class AdjustmentPlanDto {
-  @ApiProperty({ example: '쇼핑은 반나절로 줄여보세요' })
-  aiMessage: string;
-
-  @ApiProperty({ example: ['공통 관심사 우선', '동선 최적화'] })
-  summaryPoints: string[];
 }
 
 export class WorkspaceDto {
@@ -736,13 +712,6 @@ export class ScheduleSummaryDto {
   dayPlans: Record<string, string>;
 }
 
-export class DuriSuggestPlacesDto {
-  @ApiProperty({
-    example: [{ name: '협재해수욕장', reason: '바다·감성 태그 매칭' }],
-  })
-  suggestions: { name: string; reason: string }[];
-}
-
 export class AnalysisReportDto {
   @ApiProperty()
   _id: string;
@@ -750,10 +719,22 @@ export class AnalysisReportDto {
   @ApiProperty()
   roomId: string;
 
+  @ApiProperty({ example: 7 })
+  scheduleVersion: number;
+
+  @ApiProperty({ example: 12 })
+  factsVersion: number;
+
+  @ApiProperty({ example: 'evidence-v2' })
+  analysisVersion: string;
+
   @ApiProperty({
     example: {
+      available: true,
       totalDistance: 12.4,
       totalDurationSeconds: 1860,
+      knownSegmentCount: 1,
+      unknownSegmentCount: 0,
       segments: [
         {
           from: '성산',
@@ -772,24 +753,50 @@ export class AnalysisReportDto {
 
   @ApiProperty({
     example: {
-      estimated: 180000,
-      breakdown: [{ place: '성산일출봉', estimated: 0 }],
+      available: false,
+      estimated: null,
+      reason: 'cost_data_not_collected',
+      breakdown: [],
     },
   })
   budgetAnalysis: Record<string, unknown>;
 
   @ApiProperty({
-    example: { byDay: [{ day: 1, score: 70, message: '적정' }] },
+    example: {
+      method: 'union_occupied_minutes_over_calendar_day',
+      scoreBasisMinutes: 1440,
+      byDay: [
+        {
+          day: 1,
+          score: 16.7,
+          occupiedMinutes: 240,
+          freeMinutesWithinSpan: 30,
+          spanMinutes: 270,
+          message: '총 240분 일정, 일정 사이 여유 30분입니다.',
+        },
+      ],
+    },
   })
   densityAnalysis: Record<string, unknown>;
 
   @ApiProperty({
-    example: { score: 80, details: [{ area: '자연', matched: true }] },
+    example: {
+      available: true,
+      score: 80,
+      method: 'mean_member_preferred_tag_coverage',
+      confidence: 'complete',
+      details: [],
+    },
   })
   preferenceReflection: Record<string, unknown>;
 
   @ApiProperty({
-    example: { overlaps: [], closedVenues: [] },
+    example: {
+      overlaps: [],
+      closedVenues: [],
+      operatingHoursAvailable: false,
+      operatingHoursReason: 'verified_operating_hours_not_available',
+    },
   })
   conflictAnalysis: Record<string, unknown>;
 
@@ -797,4 +804,18 @@ export class AnalysisReportDto {
     example: [{ type: 'route', message: '동선을 줄여보세요' }],
   })
   suggestions: { type: string; message: string }[];
+
+  @ApiPropertyOptional({ description: '현재 입력보다 오래된 리포트인지 여부' })
+  stale?: boolean;
+
+  @ApiPropertyOptional({
+    description: '교통 근거의 재조회 시간이 지난 리포트인지 여부',
+  })
+  evidenceExpired?: boolean;
+
+  @ApiPropertyOptional()
+  currentScheduleVersion?: number;
+
+  @ApiPropertyOptional()
+  currentFactsVersion?: number;
 }

@@ -9,7 +9,12 @@ export function findRoomMember(room: TravelRoomDocument, userId: string) {
 
 export function assertRoomMember(room: TravelRoomDocument, userId: string) {
   const member = findRoomMember(room, userId);
-  if (!member) throw new ForbiddenException('Not a room member');
+  if (!member) {
+    throw new ForbiddenException({
+      code: 'ROOM_MEMBER_REQUIRED',
+      message: '이 여행방에 참여한 사용자만 이용할 수 있습니다.',
+    });
+  }
   return member;
 }
 
@@ -48,6 +53,6 @@ export function assertTodoMutator(
 export function requireRoom(
   room: TravelRoomDocument | null,
 ): TravelRoomDocument {
-  if (!room) throw new NotFoundException('Room not found');
+  if (!room) throw new NotFoundException('여행방을 찾을 수 없습니다.');
   return room;
 }

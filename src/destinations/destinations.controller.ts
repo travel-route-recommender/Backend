@@ -12,7 +12,7 @@ export class DestinationsController {
   @ApiOperation({
     summary: '인기 여행지 Top 10',
     description:
-      'DB `popularityScore` 기준 MVP입니다. 탐색 홈 추천 영역에 쓰면 됩니다. (관광공사 방문자수 빅데이터 연동 전)',
+      'DB에 저장된 `popularityScore`를 기준으로 탐색 홈의 여행지를 정렬합니다.',
   })
   @ApiOkResponse({
     type: PopularDestinationDto,

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -11,6 +12,7 @@ import {
   Matches,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -61,6 +63,8 @@ export class TodoSourceDto {
   })
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  @Matches(/\S/, { message: 'dedupeKey는 공백일 수 없습니다.' })
   @MaxLength(200)
   dedupeKey?: string;
 
@@ -120,6 +124,7 @@ export class CreateRoomTodoDto {
   @ApiPropertyOptional({ type: [TodoChecklistItemDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => TodoChecklistItemDto)
   checklist?: TodoChecklistItemDto[];
@@ -127,6 +132,7 @@ export class CreateRoomTodoDto {
   @ApiPropertyOptional({ type: [TodoLinkDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => TodoLinkDto)
   links?: TodoLinkDto[];
@@ -140,6 +146,8 @@ export class CreateRoomTodoDto {
   @ApiPropertyOptional({ description: '재전송 중복 방지' })
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  @Matches(/\S/, { message: 'clientMutationId는 공백일 수 없습니다.' })
   @MaxLength(100)
   clientMutationId?: string;
 }
@@ -190,6 +198,7 @@ export class UpdateRoomTodoDto {
   @ApiPropertyOptional({ type: [TodoChecklistItemDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => TodoChecklistItemDto)
   checklist?: TodoChecklistItemDto[];
@@ -197,6 +206,7 @@ export class UpdateRoomTodoDto {
   @ApiPropertyOptional({ type: [TodoLinkDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => TodoLinkDto)
   links?: TodoLinkDto[];
@@ -217,6 +227,8 @@ export class UpdateRoomTodoDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  @Matches(/\S/, { message: 'clientMutationId는 공백일 수 없습니다.' })
   @MaxLength(100)
   clientMutationId?: string;
 }
@@ -227,5 +239,17 @@ export class ResolveAutoTodosDto {
     description: '해소된 원인의 dedupeKey',
   })
   @IsString()
+  @MinLength(1)
+  @Matches(/\S/, { message: 'dedupeKey는 공백일 수 없습니다.' })
   dedupeKey: string;
+
+  @ApiPropertyOptional({
+    description:
+      '원인을 해소한 일정 버전. 서버 후속 작업의 순서 역전을 막을 때 사용합니다.',
+    example: 7,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedScheduleVersion?: number;
 }
