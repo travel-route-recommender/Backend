@@ -15,6 +15,7 @@ import {
 } from '../schemas/room-todo.schema';
 import {
   assertRoomMember,
+  assertRoomWritable,
   assertTodoMutator,
   requireRoom,
 } from './room-access';
@@ -211,6 +212,7 @@ export class RoomTodosService {
 
   async create(roomId: string, userId: string, dto: CreateRoomTodoDto) {
     const { room } = await this.getRoomForMember(roomId, userId);
+    assertRoomWritable(room);
     this.assertAssigneeInRoom(room, dto.assigneeId);
     if (dto.links?.length) this.assertLinksInRoom(room, dto.links);
 
@@ -290,6 +292,7 @@ export class RoomTodosService {
     dto: UpdateRoomTodoDto,
   ) {
     const { room } = await this.getRoomForMember(roomId, userId);
+    assertRoomWritable(room);
     const todo = await this.todoModel.findOne({
       _id: todoId,
       roomId: room._id,
@@ -383,6 +386,7 @@ export class RoomTodosService {
     clientMutationId?: string,
   ) {
     const { room } = await this.getRoomForMember(roomId, userId);
+    assertRoomWritable(room);
     const todo = await this.todoModel.findOne({
       _id: todoId,
       roomId: room._id,

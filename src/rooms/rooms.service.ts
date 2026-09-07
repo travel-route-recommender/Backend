@@ -69,6 +69,7 @@ import { SignedUrlService } from '../common/storage/signed-url.service';
 import {
   assertRoomMember,
   assertRoomOwner,
+  assertRoomWritable,
   requireRoom,
 } from './room-access';
 
@@ -101,6 +102,7 @@ export class RoomsService {
   private async getRoomForOwner(roomId: string, userId: string) {
     const room = requireRoom(await this.roomModel.findById(roomId));
     assertRoomOwner(room, userId);
+    assertRoomWritable(room);
     return room;
   }
 
@@ -258,6 +260,7 @@ export class RoomsService {
   async acceptInvite(code: string, userId: string) {
     const room = await this.roomModel.findOne({ inviteCode: code });
     if (!room) throw new NotFoundException('Invalid invite code');
+    assertRoomWritable(room);
 
     const already = room.members.some((m) => m.userId.toString() === userId);
     if (already) return this.formatRoom(room);
@@ -435,6 +438,7 @@ export class RoomsService {
 
   async addCandidate(roomId: string, userId: string, dto: AddCandidateDto) {
     const room = await this.getRoomForMember(roomId, userId);
+    assertRoomWritable(room);
 
     // placeId 직접 지정 또는 TourAPI contentId로 upsert 후 placeId 확보.
     let placeId = dto.placeId;
@@ -526,6 +530,7 @@ export class RoomsService {
     } | void;
   }) {
     const room = await this.getRoomForMember(opts.roomId, opts.userId);
+    assertRoomWritable(room);
     const currentVersion = room.scheduleVersion ?? 0;
 
     if (

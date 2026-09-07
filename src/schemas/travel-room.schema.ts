@@ -344,8 +344,8 @@ export class TravelRoom {
   @Prop()
   endDate?: Date;
 
-  @Prop({ enum: ['ongoing', 'completed'], default: 'ongoing' })
-  status: 'ongoing' | 'completed';
+  @Prop({ enum: ['ongoing', 'completed', 'closed'], default: 'ongoing' })
+  status: 'ongoing' | 'completed' | 'closed';
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   createdBy: Types.ObjectId;

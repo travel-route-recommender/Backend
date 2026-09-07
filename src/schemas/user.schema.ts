@@ -80,6 +80,25 @@ export class User {
 
   @Prop({ type: [String], default: [] })
   refreshTokens: string[];
+
+  @Prop()
+  termsVersion?: string;
+
+  @Prop()
+  privacyConsentVersion?: string;
+
+  @Prop({ default: false })
+  overFourteenConfirmed: boolean;
+
+  @Prop()
+  termsConsentedAt?: Date;
+
+  @Prop()
+  deletedAt?: Date;
+
+  /** Apple refresh token (encrypted). revoke on account delete */
+  @Prop()
+  appleRefreshTokenEnc?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
