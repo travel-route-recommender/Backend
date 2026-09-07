@@ -67,14 +67,14 @@ TripMatch / Tourmate **메인 REST API 서버**
 
 | 이름 | 상태 | Method | Path | 인증 | description |
 |------|------|--------|------|------|-------------|
-| 이메일 회원가입 | 완료 | POST | `/auth/signup` | ❌ | nickname, email, password → accessToken + refreshToken |
+| 이메일 회원가입 | 완료 | POST | `/auth/signup` | ❌ | 약관 3개 필수 |
 | 이메일 로그인 | 완료 | POST | `/auth/login` | ❌ | email, password → tokens |
 | 토큰 갱신 | 완료 | POST | `/auth/refresh` | ❌ | refreshToken → 새 accessToken |
 | 로그아웃 | 완료 | POST | `/auth/logout` | ✅ Bearer | refreshToken DB에서 폐기 |
-| Kakao OAuth | 완료 | POST | `/auth/oauth/kakao` | ❌ | Kakao accessToken → 유저 생성/조회 |
-| 초대 guest 입장 | 완료 | POST | `/auth/join-by-invite` | ❌ | inviteCode + nickname → guest 유저 + roomId |
+| Kakao OAuth | 완료 | POST | `/auth/oauth/kakao` | ❌ | 신규면 약관 3개 필수 · 이메일 자동병합 없음 |
+| Apple OAuth | 완료 | POST | `/auth/oauth/apple` | ❌ | identityToken 검증 · 신규 약관 필수 |
+| 초대 guest 입장 | 완료 | POST | `/auth/join-by-invite` | ❌ | 약관 3개 필수 |
 | Google OAuth | 시작 전 | — | — | — | Phase 2 |
-| Apple OAuth | 시작 전 | — | — | — | Phase 2 |
 | guest → 정식 계정 merge | 시작 전 | — | — | — | 미정 |
 
 ### Users
@@ -87,6 +87,7 @@ TripMatch / Tourmate **메인 REST API 서버**
 | 여행 통계 | 완료 | GET | `/users/me/trips-summary` | ✅ Bearer | ongoing / completed count |
 | 프로필 수정 | 완료 | PATCH | `/users/me/profile` | ✅ Bearer | nickname, profileImageUrl |
 | 온보딩 완료 | 완료 | PATCH | `/users/me/onboarding-complete` | ✅ Bearer | onboardingCompleted = true |
+| 계정 탈퇴 | 완료 | DELETE | `/users/me` | ✅ Bearer | 이메일은 password · 익명 처리 · 사진 삭제 · 방장 방 closed |
 
 ### User Saves (탐색 Save)
 

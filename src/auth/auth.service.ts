@@ -8,10 +8,18 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import axios from 'axios';
 import { UsersService } from '../users/users.service';
-import { LoginDto, SignupDto } from './dto/auth.dto';
+import {
+  AppleOAuthDto,
+  JoinByInviteDto,
+  KakaoOAuthDto,
+  LoginDto,
+  SignupDto,
+} from './dto/auth.dto';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { TravelRoom, TravelRoomDocument } from '../schemas/travel-room.schema';
+import { AppleService } from './apple.service';
+import { requireTermsConsent, termsToUserFields } from './terms';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +27,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly appleService: AppleService,
     @InjectModel(TravelRoom.name)
     private roomModel: Model<TravelRoomDocument>,
   ) {}
@@ -29,6 +38,7 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
+    const terms = requireTermsConsent(dto);
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.usersService.create({
       email: dto.email.toLowerCase(),
@@ -36,6 +46,7 @@ export class AuthService {
       nickname: dto.nickname,
       onboardingCompleted: false,
       isGuest: false,
+      ...termsToUserFields(terms),
     });
 
     return this.issueTokens(user._id.toString(), user.email);
@@ -43,7 +54,7 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
-    if (!user?.passwordHash) {
+    if (!user?.passwordHash || user.deletedAt) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -63,7 +74,11 @@ export class AuthService {
       );
 
       const user = await this.usersService.findById(payload.sub);
-      if (!user || !user.refreshTokens.includes(refreshToken)) {
+      if (
+        !user ||
+        user.deletedAt ||
+        !user.refreshTokens.includes(refreshToken)
+      ) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
@@ -83,16 +98,21 @@ export class AuthService {
     return { success: true };
   }
 
-  async joinByInvite(inviteCode: string, nickname: string) {
-    const room = await this.roomModel.findOne({ inviteCode });
+  async joinByInvite(dto: JoinByInviteDto) {
+    const terms = requireTermsConsent(dto);
+    const room = await this.roomModel.findOne({ inviteCode: dto.inviteCode });
     if (!room) {
       throw new UnauthorizedException('Invalid invite code');
     }
+    if (room.status === 'closed') {
+      throw new UnauthorizedException('닫힌 여행방입니다');
+    }
 
     const user = await this.usersService.create({
-      nickname,
+      nickname: dto.nickname,
       isGuest: true,
       onboardingCompleted: false,
+      ...termsToUserFields(terms),
     });
 
     room.members.push({
@@ -117,9 +137,9 @@ export class AuthService {
     };
   }
 
-  async kakaoLogin(accessToken: string) {
+  async kakaoLogin(dto: KakaoOAuthDto) {
     const { data } = await axios.get('https://kapi.kakao.com/v2/user/me', {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${dto.accessToken}` },
     });
 
     const oauthId = String(data.id);
@@ -129,23 +149,81 @@ export class AuthService {
     const nickname =
       (profile.nickname as string | undefined) ?? `kakao_${oauthId.slice(-6)}`;
 
-    let user = email
-      ? await this.usersService.findByEmail(email)
-      : null;
-    if (!user) {
-      user = await this.usersService.findByOAuth('kakao', oauthId);
+    let user = await this.usersService.findByOAuth('kakao', oauthId);
+    if (!user && email) {
+      // 기존 이메일 계정과 자동 병합하지 않음. 카카오 sub만 조회.
     }
 
     if (!user) {
+      const terms = requireTermsConsent(dto);
+      const emailTaken = email
+        ? await this.usersService.findByEmail(email)
+        : null;
       user = await this.usersService.create({
-        email,
+        email: email && !emailTaken ? email : undefined,
         oauthProvider: 'kakao',
         oauthId,
         nickname,
         profileImageUrl: profile.profile_image_url,
         isGuest: false,
         onboardingCompleted: false,
+        ...termsToUserFields(terms),
       });
+    }
+
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Deleted account');
+    }
+
+    return this.issueTokens(user._id.toString(), user.email);
+  }
+
+  async appleLogin(dto: AppleOAuthDto) {
+    const identity = await this.appleService.verifyIdentityToken(
+      dto.identityToken,
+      dto.nonce,
+    );
+    const tokens = await this.appleService.exchangeAuthorizationCode(
+      dto.authorizationCode,
+    );
+
+    let user = await this.usersService.findByOAuth('apple', identity.sub);
+
+    if (!user) {
+      const terms = requireTermsConsent(dto);
+      const given = dto.fullName?.givenName?.trim();
+      const family = dto.fullName?.familyName?.trim();
+      const nickname =
+        [family, given].filter(Boolean).join('') ||
+        `apple_${identity.sub.slice(-6)}`;
+
+      const email = identity.email;
+      const emailTaken = email
+        ? await this.usersService.findByEmail(email)
+        : null;
+
+      user = await this.usersService.create({
+        email: email && !emailTaken ? email : undefined,
+        oauthProvider: 'apple',
+        oauthId: identity.sub,
+        nickname,
+        isGuest: false,
+        onboardingCompleted: false,
+        appleRefreshTokenEnc: tokens.refreshToken
+          ? this.appleService.encryptRefreshToken(tokens.refreshToken)
+          : undefined,
+        ...termsToUserFields(terms),
+      });
+    } else if (tokens.refreshToken) {
+      await this.usersService.updateById(user._id.toString(), {
+        appleRefreshTokenEnc: this.appleService.encryptRefreshToken(
+          tokens.refreshToken,
+        ),
+      });
+    }
+
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Deleted account');
     }
 
     return this.issueTokens(user._id.toString(), user.email);

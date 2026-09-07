@@ -109,9 +109,17 @@ npm run openapi:generate
 ### POST `/auth/signup`
 
 ```json
-{ "nickname": "윤지", "email": "test@example.com", "password": "password123" }
+{
+  "nickname": "윤지",
+  "email": "test@example.com",
+  "password": "password123",
+  "termsVersion": "1.0",
+  "privacyConsentVersion": "1.0",
+  "overFourteenConfirmed": true
+}
 ```
 
+- 약관 3개 **필수**. 없으면 400 `TERMS_REQUIRED`
 - 409: `Email already registered`
 
 ### POST `/auth/login`
@@ -148,15 +156,44 @@ npm run openapi:generate
 ### POST `/auth/oauth/kakao`
 
 ```json
-{ "accessToken": "<Kakao SDK access token>" }
+{
+  "accessToken": "<Kakao SDK access token>",
+  "termsVersion": "1.0",
+  "privacyConsentVersion": "1.0",
+  "overFourteenConfirmed": true
+}
 ```
 
-프론트가 보내는 것은 **카카오 access token** (우리 JWT 아님).
+신규 가입만 약관 필수. 기존 카카오 유저는 accessToken만. 이메일 계정과 **자동 병합 안 함**.
+
+### POST `/auth/oauth/apple`
+
+```json
+{
+  "identityToken": "<Apple JWT>",
+  "authorizationCode": "<code>",
+  "nonce": "optional",
+  "fullName": { "givenName": "지", "familyName": "윤" },
+  "termsVersion": "1.0",
+  "privacyConsentVersion": "1.0",
+  "overFourteenConfirmed": true
+}
+```
+
+- identityToken: iss/aud/exp/nonce 검증
+- 신규만 약관 필수. `fullName`은 최초 1회만 옴
+- 이메일 가리기·중복 이메일은 별도 계정 (자동 병합 없음)
 
 ### POST `/auth/join-by-invite` (비인증)
 
 ```json
-{ "inviteCode": "ABCD1234", "nickname": "게스트윤지" }
+{
+  "inviteCode": "ABCD1234",
+  "nickname": "게스트윤지",
+  "termsVersion": "1.0",
+  "privacyConsentVersion": "1.0",
+  "overFourteenConfirmed": true
+}
 ```
 
 성공:
@@ -175,8 +212,17 @@ npm run openapi:generate
 
 ### Bearer 불필요
 
-`/auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/join-by-invite`, `/auth/oauth/kakao`  
+`/auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/join-by-invite`, `/auth/oauth/kakao`, `/auth/oauth/apple`  
 `/quiz/questions`, `/places/*`, `/destinations/*`
+
+### DELETE `/users/me` (Bearer)
+
+- 이메일 계정: `{ "password": "..." }` 필수
+- 게스트·카카오·애플: body 없이 가능
+- 일정은 남기고 닉네임 `탈퇴한 사용자`
+- 본인이 올린 티켓/문서 사진은 삭제
+- 방장인 방은 `status: closed` (쓰기 불가)
+- 이후 그 유저 JWT는 401
 
 ---
 

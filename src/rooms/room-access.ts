@@ -51,3 +51,12 @@ export function requireRoom(
   if (!room) throw new NotFoundException('Room not found');
   return room;
 }
+
+export function assertRoomWritable(room: TravelRoomDocument) {
+  if (room.status === 'closed') {
+    throw new ForbiddenException({
+      code: 'ROOM_CLOSED',
+      message: '방장이 탈퇴하여 닫힌 여행방입니다.',
+    });
+  }
+}

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Query,
@@ -21,12 +22,14 @@ import {
 } from '../common/decorators/current-user.decorator';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { DeleteMeDto } from '../auth/dto/auth.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { TravelRoom, TravelRoomDocument } from '../schemas/travel-room.schema';
 import {
   MeResponseDto,
   PublicUserDto,
+  SuccessDto,
   TravelTypeDto,
   TripsSummaryDto,
   UserListPageDto,
@@ -150,5 +153,16 @@ export class UsersController {
       onboardingCompleted: true,
     });
     return this.usersService.toPublicUser(updated!);
+  }
+
+  @Delete('me')
+  @ApiOperation({
+    summary: '계정 탈퇴',
+    description:
+      '이메일 계정은 password 필수. 게스트·소셜은 토큰만. 일정은 남기고 닉네임은 익명. 본인 업로드 사진/문서는 삭제. 방장 방은 closed. 이후 JWT는 401.',
+  })
+  @ApiOkResponse({ type: SuccessDto })
+  deleteMe(@CurrentUser() user: AuthUser, @Body() dto: DeleteMeDto) {
+    return this.usersService.deleteMe(user.userId, dto.password);
   }
 }

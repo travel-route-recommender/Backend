@@ -20,6 +20,7 @@ import {
 import { SignedUrlService } from '../common/storage/signed-url.service';
 import {
   assertRoomMember,
+  assertRoomWritable,
   requireRoom,
 } from './room-access';
 
@@ -83,6 +84,7 @@ export class RoomDocumentsService {
   ) {
     const room = await this.getRoom(roomId);
     assertRoomMember(room, userId);
+    assertRoomWritable(room);
     this.uploads.assertDocumentFile(file);
 
     const saved = await this.uploads.saveRoomDocument(roomId, file);

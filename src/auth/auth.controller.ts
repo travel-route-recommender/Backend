@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import {
+  AppleOAuthDto,
   JoinByInviteDto,
   KakaoOAuthDto,
   LoginDto,
@@ -34,7 +35,7 @@ export class AuthController {
   @ApiOperation({
     summary: '이메일 회원가입',
     description:
-      'accessToken · refreshToken · user를 반환합니다. 이후 온보딩 설문(`/onboarding`)을 이어가세요.',
+      '약관 3개 필수. accessToken · refreshToken · user 반환. 이후 `/onboarding`을 이어가세요.',
   })
   @ApiCreatedResponse({ type: AuthTokensDto })
   signup(@Body() dto: SignupDto) {
@@ -78,21 +79,32 @@ export class AuthController {
   @ApiOperation({
     summary: '초대코드로 게스트 입장',
     description:
-      '계정이 없는 친구가 초대 링크로 들어올 때 사용. 게스트 유저를 만들고 해당 여행방에 바로 입장시킵니다.',
+      '게스트 유저 생성 후 여행방 입장. 약관 3개 필수.',
   })
   @ApiCreatedResponse({ type: AuthJoinByInviteDto })
   joinByInvite(@Body() dto: JoinByInviteDto) {
-    return this.authService.joinByInvite(dto.inviteCode, dto.nickname);
+    return this.authService.joinByInvite(dto);
   }
 
   @Post('oauth/kakao')
   @ApiOperation({
     summary: '카카오 로그인',
     description:
-      '카카오 SDK에서 받은 accessToken을 넘기면 Tourmate 토큰으로 교환합니다.',
+      '카카오 accessToken 교환. 신규 가입이면 약관 3개 필수. 기존 이메일 계정과 자동 병합하지 않음.',
   })
   @ApiOkResponse({ type: AuthTokensDto })
   kakao(@Body() dto: KakaoOAuthDto) {
-    return this.authService.kakaoLogin(dto.accessToken);
+    return this.authService.kakaoLogin(dto);
+  }
+
+  @Post('oauth/apple')
+  @ApiOperation({
+    summary: 'Apple 로그인',
+    description:
+      'identityToken 검증 + authorization code 교환. 신규 가입 시 약관 3개 필수. 이메일 계정과 자동 병합하지 않음.',
+  })
+  @ApiOkResponse({ type: AuthTokensDto })
+  apple(@Body() dto: AppleOAuthDto) {
+    return this.authService.appleLogin(dto);
   }
 }
